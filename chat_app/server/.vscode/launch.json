@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Chat Server",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/server", // 可执行文件路径
+      "args": [], // 如有需要，可填入启动时的命令行参数
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "Build with Makefile" // 调试前自动构建项目
+    }
+  ]
+}

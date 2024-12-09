@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "errno.h": "c",
+        "inet.h": "c",
+        "unistd.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "disabled",
+    "makefile.configureOnOpen": true,
+    "marscode.chatLanguage": "cn"
+}
