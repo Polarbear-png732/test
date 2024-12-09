@@ -33,10 +33,9 @@ int main()
         perror("创建接收线程失败");
         exit(1);
     }*/
-    // 等待线程结束
+    // 等待线程结束 
     pthread_join(send_thread, NULL);
-    pthread_join(receive_thread, NULL);
-    //pthread_join(polling_pthread, NULL);
+     //pthread_join(polling_pthread, NULL);
 
     // 关闭套接字
     close(client_fd);
@@ -47,6 +46,7 @@ int main()
 // 发送请求函数
 void *send_request(void *arg)
 {
+    
     int action;
     printf("1.登录 2.创建用户3.添加好友或删除4.处理好友请求5.发送私聊消息6.创建群或者删除\n");
 
@@ -197,7 +197,7 @@ void *send_request(void *arg)
             break;
         }
     }
-
+    pthread_detach(pthread_self());
     return NULL;
 }
 
@@ -210,8 +210,10 @@ void *receive_response(void *arg)
     unsigned int size_len = sizeof(req_length);
     while (1)
     {
-
-        recv_full(client_fd, buffer, size_len);                         // 先接收报文长度
+        
+        if(recv_full(client_fd, buffer, size_len)==0){
+            break;
+        }                         // 先接收报文长度
         req_length = ntohl(*(unsigned int *)buffer);                    // 将接收到的报文长度从网络字节序转换为主机字节序
         recv_full(client_fd, buffer + size_len, req_length - size_len); // 接收剩余的数据
         unsigned int response_code = ntohl(*(unsigned int *)(buffer + size_len));
@@ -242,6 +244,7 @@ void *receive_response(void *arg)
         }
         }
     }
+    pthread_detach(pthread_self());
     return NULL;
 }
 

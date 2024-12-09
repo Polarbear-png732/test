@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -g -pthread
 LIBS = -lmysqlclient
 
-SRCS = main.c init.c server.c
+SRCS = main.c init.c server.c event_queue.c group_manage.c friend_manage.c
 OBJS = $(SRCS:.c=.o)
 
 TARGET =server

@@ -5,7 +5,7 @@ char **friends = NULL;
 char **online_friends = NULL; // 在线好友列表与好友列表和对应的好友数量
 int friend_count = 0;
 int online_friend_count;
-struct session_name client_session = {0};        // 存储客户端会话信息
+__thread struct session_name client_session;
 
 EventQueue *queue=NULL;
 
@@ -154,8 +154,8 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn)
     login_res.status_code = htonl(SUCCESS);
     login_res.length = htonl(sizeof(login_res));
     login_res.request_code = htonl(RESPONSE_LOGIN);
-    generate_session_id(&login_res.session_token);
-    strcpy(&login_res.offline_messages, "no offline messige");
+    generate_session_id(login_res.session_token);
+    strcpy(login_res.offline_messages, "no offline messige");
 
     send(client_fd, &login_res, sizeof(login_res), 0);
 
@@ -185,38 +185,6 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn)
     on_off_push(1, friends);
 }
 
-// 创建用户处理函数
-void handle_create_user(int client_fd, char *buffer, MYSQL *conn)
-{
-
-    unsigned int len_response = sizeof(SimpleResponse);
-    SimpleResponse *response = (SimpleResponse *)malloc(len_response);
-    response->length = htonl(len_response);
-    response->request_code = htonl(SIMPLE_RESPONSE);
-
-    printf("handle create user\n");
-    CreateUser *create_req = (CreateUser *)buffer;
-    // 插入用户数据到数据库
-    char query[512];
-    snprintf(query, sizeof(query), "INSERT INTO users (username,password) VALUES ('%s','%s' );",
-             create_req->username, create_req->password);
-    pthread_mutex_lock(&mysql_lock);
-
-    if (mysql_query(conn, query))
-    {
-        response->status_code = htonl(FAIL);
-        send(client_fd, response, len_response, 0);
-        free(response);
-        return;
-    }
-    pthread_mutex_unlock(&mysql_lock);
-
-    // 返回成功响应
-    response->status_code = htonl(SUCCESS);
-    send(client_fd, response, len_response, 0);
-    free(response);
-    return;
-}
 
 // 数据库连接函数
 MYSQL *db_connect()
@@ -321,36 +289,8 @@ void send_message(int sockfd, const char *feedback)
     send(sockfd, &response, ntohl(response.length), 0);
     return;
 }
-// 根据会话标识符找到在线用户id
-int find_uid(char *token)
-{
 
-    int i = find_session_index(0, token);
-    int id = session_table[i].id;
-    return id;
-}
-
-int find_session_index(int search_by, const char *value)
-{
-    for (int i = 0; i < session_table_index; ++i)
-    {
-        if (search_by == 0)
-        { // 按 session 字段查找
-            if (strcmp(session_table[i].session, value) == 0)
-            {
-                return i;
-            }
-        }
-        else if (search_by == 1)
-        { // 按 username 字段查找
-            if (strcmp(session_table[i].username, value) == 0)
-            {
-                return i;
-            }
-        }
-    }
-    return -1; // 如果未找到匹配项，返回 -1
-}
+//将在线用户从全局会话表中删除
 int delete_session(const char *session)
 {
     for (int i = 0; i < session_table_index; i++)
@@ -388,168 +328,7 @@ void send_simple(int sockfd, int success)
     return;
 }
 
-// 处理添加好友请求
-void handle_add_friend(int client_fd, char *buffer, MYSQL *conn)
-{
-    FriendRequest *add_friend = (FriendRequest *)buffer;
-    int i = find_session_index(0, add_friend->session_token);
-    unsigned int user_id = 0;
-    unsigned friend_id = 0;
-
-    char query[512];
-    MYSQL_RES *result;
-    MYSQL_ROW row;
-
-    snprintf(query, sizeof(query),
-             "SELECT id FROM users WHERE username='%s' OR username='%s' "
-             "ORDER BY CASE username "
-             "WHEN '%s' THEN 1 "
-             "WHEN '%s' THEN 2 "
-             "ELSE 3 END;",
-             session_table[i].username,
-             add_friend->friend_username,
-             session_table[i].username,
-             add_friend->friend_username);
-
-    // 执行查询
-    result = do_query(query, conn);
-    if (result == NULL)
-    {
-        fprintf(stderr, "Store Result Error: %s\n", mysql_error(conn));
-        return;
-    }
-
-    // 遍历结果集
-    while ((row = mysql_fetch_row(result)))
-    {
-        if (user_id == 0)
-        {
-            user_id = atoi(row[0]);
-        }
-        else
-        {
-            friend_id = atoi(row[0]);
-        }
-    }
-    printf("user_id:%d,  friend_id:%d\n", user_id, friend_id);
-
-    if (ntohl(add_friend->action) == 0)
-    {
-        snprintf(query, sizeof(query), "DELETE FROM friends "
-                                       "WHERE (user_id = %d AND friend_id = %d) OR (user_id = %d AND friend_id = %d);",
-                 user_id, friend_id, friend_id, user_id);
-        pthread_mutex_lock(&mysql_lock);
-        if (mysql_query(conn, query))
-        {
-            fprintf(stderr, "Error: %s\n", mysql_error(conn));
-            return;
-        }
-        return;
-    }
-    pthread_mutex_unlock(&mysql_lock);
-    // 插入用户数据到数据库
-    snprintf(query, sizeof(query), "INSERT INTO friends (user_id, friend_id) VALUES ('%u','%u');",
-             user_id, friend_id);
-    pthread_mutex_lock(&mysql_lock);
-
-    if (mysql_query(conn, query))
-    {
-        send_message(client_fd, "Add friend failed");
-        mysql_free_result(result);
-        return;
-    }
-    pthread_mutex_unlock(&mysql_lock);
-    send_simple(client_fd, SUCCESS);
-    mysql_free_result(result);
-    return;
-}
-
-// 处理接受与拒绝添加好友的请求
-void handle_accept_add(int client_fd, char *buffer, MYSQL *conn)
-{
-    HandleFriendRequest *handle_add = (HandleFriendRequest *)buffer;
-    int i = find_session_index(0, handle_add->session_token);
-    int friend_id = session_table[i].id; // 找到处理好友申请的用户id用于后续查询
-    int user_id;
-    int table_id; // 数据库中好友表的表项id
-    char status[16];
-    char query[512];
-    MYSQL_RES *result;
-    MYSQL_ROW row;
-
-    if (ntohl(handle_add->action))
-    {
-        strcpy(status, "accepted");
-    }
-    else
-    {
-        strcpy(status, "blocked");
-    }
-    snprintf(query, sizeof(query),
-             "SELECT id FROM users where username='%s'", handle_add->friend_username);
-
-    result = do_query(query, conn);
-    row = mysql_fetch_row(result);
-    user_id = atoi(row[0]);
-    mysql_free_result(result); // 释放结果集
-
-    snprintf(query, sizeof(query),
-             "SELECT id FROM friends where friend_id='%d' and user_id='%d';", friend_id, user_id);
-    result = do_query(query, conn);
-    row = mysql_fetch_row(result);
-    table_id = atoi(row[0]);
-
-    snprintf(query, sizeof(query),
-             "UPDATE friends SET status = '%s' WHERE id='%d';", status, table_id);
-
-    do_query(query, conn);
-
-    send_simple(client_fd, SUCCESS);
-    return;
-}
-
-// 推送好友请求
-void push_friend(int client_fd, char *name, MYSQL *conn)
-
-{
-    char query[512];
-    MYSQL_RES *result;
-    MYSQL_ROW row;
-    snprintf(query, sizeof(query), "SELECT id FROM users WHERE username='%s'", name);
-    result = do_query(query, conn);
-    row = mysql_fetch_row(result);
-    int friend_id = atoi(row[0]);
-    mysql_free_result(result);
-    snprintf(query, sizeof(query),
-             "SELECT u.username "
-             "FROM friends f "
-             "JOIN users u ON f.user_id = u.id "
-             "WHERE f.friend_id = %d AND f.status = 'pending';",
-             friend_id);
-
-    result = do_query(query, conn);
-
-    char push_friend_message[256] = "新的好友：";
-    int length = strlen(push_friend_message);
-
-    while ((row = mysql_fetch_row(result)))
-    {
-        if (row[0] != NULL && strlen(row[0]) > 0)
-        { // 检查 row[0] 是否为空
-            strncat(push_friend_message, row[0], 32);
-            strncat(push_friend_message, " ", 1);
-            length = strlen(push_friend_message); // 更新 length
-        }
-    }
-    printf("%s\n", push_friend_message);
-    if (length > strlen("新的好友："))
-    { // 检查是否有新的内容被添加
-        send_message(client_fd, push_friend_message);
-    }
-    mysql_free_result(result);
-    return;
-}
-
+//用户上线推送好友列表
 void push_fri_list(char **list, int count, int client_fd, MYSQL *conn)
 {
 
@@ -578,6 +357,7 @@ void push_fri_list(char **list, int count, int client_fd, MYSQL *conn)
     send_message(client_fd, fri_list); // 发送给客户端
     return;
 }
+//发送私聊消息
 void private_message(int client, char *buffer, MYSQL *conn)
 {
     PrivateMessage *message = (PrivateMessage *)buffer;
@@ -616,19 +396,6 @@ void private_message(int client, char *buffer, MYSQL *conn)
     return;
 }
 
-int find_id_mysql(char *name, MYSQL *conn)
-{
-    char query[512];
-    MYSQL_RES *result;
-    MYSQL_ROW row;
-    snprintf(query, sizeof(query), "SELECT id FROM users WHERE username='%s'", name);
-    result = do_query(query, conn);
-    row = mysql_fetch_row(result);
-    int id = atoi(row[0]);
-    mysql_free_result(result);
-    return id;
-}
-
 MYSQL_RES *do_query(char *query, MYSQL *conn)
 {
     if (mysql_query(conn, query))
@@ -661,7 +428,7 @@ MYSQL_RES *do_query(char *query, MYSQL *conn)
 
     return result;
 }
-
+//用户上线时获取在线好友列表
 char **get_online_friends(char **friends, int *friend_count, int *online_friend_count)
 {
     int i, j, k = 0;                                                        // k用于新数组索引
@@ -710,7 +477,7 @@ char **get_online_friends(char **friends, int *friend_count, int *online_friend_
     *online_friend_count = k;
     return new_friends;
 }
-
+//从数据库中获取用户好友列表
 char **get_friend_list(int user_id, int *friend_count, MYSQL *conn)
 {
     // 分配结果数组
@@ -759,7 +526,7 @@ char **get_friend_list(int user_id, int *friend_count, MYSQL *conn)
 
     return friend_list;
 }
-
+//上下线推送消息给在线好友
 void on_off_push(int on, char **friends)
 {
 
@@ -795,7 +562,7 @@ void on_off_push(int on, char **friends)
         return;
     }
 }
-
+//离线消息推送
 void offline_message_push(unsigned int user_id, MYSQL *conn)
 {
     char query[512];
@@ -822,63 +589,7 @@ void offline_message_push(unsigned int user_id, MYSQL *conn)
     do_query(query, conn);
     return;
 }
-
-void create_group(int client_fd, char *buffer, MYSQL *conn)
-{
-    GroupCreateRequest *group = (GroupCreateRequest *)buffer;
-    int action = ntohl(group->action);
-    int creator_id = find_uid(group->session_token);
-    char query[512];
-    MYSQL_RES *result;
-    MYSQL_ROW row;
-    if (action == 1)
-    {
-        snprintf(query, sizeof(query), "INSERT INTO groups (group_name,creator_id) "
-                                       "VALUES ('%s','%d'); ",
-                 group->group_name, creator_id);
-        do_query(query, conn);
-        return;
-    }
-    snprintf(query, sizeof(query), "DELETE FROM groups "
-                                   "where creator_id='%d' and group_name='%s'; ",
-             creator_id, group->group_name);
-    do_query(query, conn);
-    return;
-}
-
-void invite_to_group(int client_fd, char *buffer, MYSQL *conn)
-{
-    InviteRequest *invite = (InviteRequest *)buffer;
-    int action = ntohl(invite->action);
-    // 好友在线,直接转发邀请，否则先存入数据库
-    int friend_index=find_session_index(0,invite->friendname);
-    if (online_query(invite->friendname))
-    {
-        char group_invite[128];
-        snprintf(group_invite, sizeof(group_invite),
-                 "%s邀请你进入群聊：%s", client_session.username, invite->group_name);
-        send_message(session_table[friend_index].client_fd,group_invite);
-        return;
-    }
-    char query[512];
-    MYSQL_RES *result;
-    MYSQL_ROW row;
-    snprintf(query, sizeof(query),
-         "SELECT u.id AS user_id, g.id AS group_id "
-         "FROM users u "
-         "JOIN groups g "
-         "WHERE u.username = '%s' AND g.group_name = '%s';",
-         invite->friendname, invite->group_name);
-    result = do_query(query, conn);
-    row = mysql_fetch_row(result);
-    int friend_id=atoi(row[0]);
-    int group_id=atoi(row[1]);
-    mysql_free_result(result);
-    snprintf(query, sizeof(query),"INSERT INTO group_invites "
-    "(group_id,sender_id,invitee_id,status) VALUES ('%d','%d','%d','pending');",group_id,client_session.id,friend_id);
-    do_query(query,conn);
-    return;
-}
+// 检查好友是否在线
 int online_query(char *friendname)
 {
     int i = 0;
@@ -892,100 +603,47 @@ int online_query(char *friendname)
     return 0;
 }
 
+// 根据会话标识符找到在线用户id
+int find_uid(char *token)
+{
 
- EventQueue * init_event_queue() {
-    EventQueue *queue = (EventQueue *)malloc(sizeof(EventQueue));
-    pthread_mutex_init(&queue->mutex, NULL);
-    pthread_cond_init(&queue->cond, NULL);
-    return queue;
+    int i = find_session_index(0, token);
+    int id = session_table[i].id;
+    return id;
 }
-
-void destroy_event_queue(EventQueue *queue) {
-    pthread_mutex_destroy(&queue->mutex);
-    pthread_cond_destroy(&queue->cond);
-}
-
-int push_event(EventQueue *queue, Event event) {
-    pthread_mutex_lock(&queue->mutex);
-
-    if (queue->count == QUEUE_SIZE) {
-        // 队列已满
-        pthread_mutex_unlock(&queue->mutex);
-        return -1;
-    }
-
-    queue->events[queue->tail] = event;
-    queue->tail = (queue->tail + 1) % QUEUE_SIZE; // 环形缓冲区
-    queue->count++;
-
-    pthread_cond_signal(&queue->cond);
-    pthread_mutex_unlock(&queue->mutex);
-    return 0;
-}
-
-int pop_event(EventQueue *queue, Event *event) {
-    pthread_mutex_lock(&queue->mutex);
-
-    while (queue->count == 0) {
-        // 队列为空，等待
-        pthread_cond_wait(&queue->cond, &queue->mutex);
-    }
-
-    *event = queue->events[queue->head];
-
-    queue->head = (queue->head + 1) % QUEUE_SIZE; // 环形缓冲区
-    queue->count--;
-
-    pthread_mutex_unlock(&queue->mutex);
-    return 0;
-}
-
-// 初始化
-void init_client_queues() {
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        clientfd_queues_map[i].client_fd = -1;
-        clientfd_queues_map[i].queue = NULL;
-    }
-}
-
-// 销毁所有事件队列
-void cleanup_client_queues() {
-    pthread_mutex_lock(&client_queues_lock);
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clientfd_queues_map[i].queue) {
-            destroy_event_queue(clientfd_queues_map[i].queue);
-            free(clientfd_queues_map[i].queue);
+//根据会话标识符找到在线用户在全局会话表中的索引
+int find_session_index(int search_by, const char *value)
+{
+    for (int i = 0; i < session_table_index; ++i)
+    {
+        if (search_by == 0)
+        { // 按 session 字段查找
+            if (strcmp(session_table[i].session, value) == 0)
+            {
+                return i;
+            }
         }
-        clientfd_queues_map[i].client_fd = -1;
-    }
-    pthread_mutex_unlock(&client_queues_lock);
-}
-// 获取客户端事件队列
-EventQueue* find_queue(int client_fd) {
-    pthread_mutex_lock(&client_queues_lock);
-
-    // 查找现有队列
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clientfd_queues_map[i].client_fd == client_fd) {
-            pthread_mutex_unlock(&client_queues_lock);
-            return clientfd_queues_map[i].queue; // 返回已存在的队列
+        else if (search_by == 1)
+        { // 按 username 字段查找
+            if (strcmp(session_table[i].username, value) == 0)
+            {
+                return i;
+            }
         }
     }
-    pthread_mutex_unlock(&client_queues_lock);
-    return NULL; // 如果队列空间已满，返回 NULL
+    return -1; // 如果未找到匹配项，返回 -1
 }
-void *process_events(void *arg) {
-    EventQueue *queue = (EventQueue *)arg;
 
-    while (1) {
-        Event *event = malloc(sizeof(Event));
-         pop_event(queue,event); // 从事件队列中获取事件
-        if (event->event_type == 1) {
-            printf("好友 %s 上线\n", event->username);
-        } else if (event->event_type == 0) {
-            printf("好友 %s 下线\n", event->username);
-        }
-        // 执行其他事件相关逻辑
-    }
-    return NULL;
+//从数据库中根据用户名查找用户id
+int find_id_mysql(char *name, MYSQL *conn)
+{
+    char query[512];
+    MYSQL_RES *result;
+    MYSQL_ROW row;
+    snprintf(query, sizeof(query), "SELECT id FROM users WHERE username='%s'", name);
+    result = do_query(query, conn);
+    row = mysql_fetch_row(result);
+    int id = atoi(row[0]);
+    mysql_free_result(result);
+    return id;
 }

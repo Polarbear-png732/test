@@ -20,13 +20,15 @@
 #define MAX_USERNAME_LENGTH 32
 #define MAX_CLIENTS 10
 #define QUEUE_SIZE 10
+
+
 struct session_name {
     char session[64];
     char username[32];
     int client_fd;
     unsigned id;
 };
-
+extern __thread struct session_name client_session;        // 线程局部变量存储客户端会话信息
 
 
 //以下三个结构体用于事件队列机制，实现上下线消息的及时推送

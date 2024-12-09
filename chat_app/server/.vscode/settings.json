@@ -2,7 +2,8 @@
     "files.associations": {
         "errno.h": "c",
         "inet.h": "c",
-        "unistd.h": "c"
+        "unistd.h": "c",
+        "server.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled",
     "marscode.chatLanguage": "cn"
