@@ -1,10 +1,10 @@
 #include "server.h"
-pthread_mutex_t mysql_lock = PTHREAD_MUTEX_INITIALIZER;
-
-char **friends = NULL;
-char **online_friends = NULL; // 在线好友列表与好友列表和对应的好友数量
-int friend_count = 0;
-int online_friend_count;
+ 
+__thread pthread_mutex_t friend_lock = PTHREAD_MUTEX_INITIALIZER;
+__thread char **friends = NULL;
+__thread char **online_friends = NULL; // 在线好友列表与好友列表和对应的好友数量
+__thread int friend_count = 0;
+__thread int online_friend_count=0;
 __thread struct session_name client_session;
 
 EventQueue *queue=NULL;
@@ -13,10 +13,7 @@ EventQueue *queue=NULL;
 void *handle_client(void *arg)
 {
     queue = init_event_queue();
-    pthread_t event_thread;
 
-    // 创建线程处理事件队列
-    pthread_create(&event_thread, NULL, process_events, queue);
 
     int client_fd = *(int *)arg;
     char buffer[1024];
@@ -178,9 +175,23 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn)
     mysql_free_result(res);
     push_friend(client_fd, login_req->username, conn);
 
+
     // 获取好友列表
     friends = get_friend_list(user_id, &friend_count, conn);
     push_fri_list(friends, friend_count, client_fd, conn);
+    online_friends=get_online_friends(friends,&friend_count,&online_friend_count);
+    printf("客户端：%s登录时在线好友数量%d\n",client_session.username,online_friend_count);
+
+    pthread_t event_thread;
+    event_pthread_arg *event_arg=(event_pthread_arg*)malloc(sizeof(event_pthread_arg));
+    event_arg->online_friends=online_friends;
+    event_arg->queue=queue;
+    event_arg->online_friend_count=&online_friend_count;
+    event_arg->friend_count=&friend_count;
+    event_arg->friends=friends;
+    // 创建线程处理事件队列
+    pthread_create(&event_thread, NULL, process_events,(void*)event_arg);
+    
     offline_message_push(user_id, conn);
     on_off_push(1, friends);
 }
@@ -432,46 +443,23 @@ MYSQL_RES *do_query(char *query, MYSQL *conn)
 char **get_online_friends(char **friends, int *friend_count, int *online_friend_count)
 {
     int i, j, k = 0;                                                        // k用于新数组索引
-    char **new_friends = (char **)malloc(sizeof(char *) * (*friend_count)); // 新的动态数组
+    char **new_friends = (char **)malloc(sizeof(char *) * MAX_FRIENDS); // 新的动态数组
 
-    if (!new_friends)
-    {
-        fprintf(stderr, "Memory allocation failed\n");
-        return NULL; // 内存分配失败返回 NULL
-    }
+    for (i = 0; i < MAX_FRIENDS; i++){
+        new_friends[i] = (char *)malloc(MAX_USERNAME_LENGTH * sizeof(char));
+        }
 
     for (i = 0; i < *friend_count; i++)
     {
         for (j = 0; j < session_table_index; j++)
         {
             if (strcmp(friends[i], session_table[j].username) == 0)
-            { // 如果在线
-                // 分配内存并复制字符串
-                new_friends[k] = malloc(strlen(friends[i]) + 1);
-                if (new_friends[k])
-                {
-                    strcpy(new_friends[k], friends[i]);
-                    k++;
-                }
-                else
-                {
-                    fprintf(stderr, "Memory allocation failed for online friend\n");
-                }
+            { 
+                strcpy(new_friends[k], friends[i]);
+                k++;
                 break; // 匹配上了直接跳出内层循环
             }
         }
-    }
-
-    // 重新分配新的数组空间以匹配实际在线好友数
-    char **temp = realloc(new_friends, sizeof(char *) * k);
-    if (!temp)
-    {
-        fprintf(stderr, "无好友在线\n");
-        // 如果 realloc 失败，保留原数组并继续
-    }
-    else
-    {
-        new_friends = temp;
     }
 
     *online_friend_count = k;
@@ -547,7 +535,6 @@ void on_off_push(int on, char **friends)
     }
 
     int i;
-    online_friends = get_online_friends(friends, &friend_count, &online_friend_count);
     if (online_friends)
     {
         // 遍历并处理在线好友
@@ -647,3 +634,5 @@ int find_id_mysql(char *name, MYSQL *conn)
     mysql_free_result(result);
     return id;
 }
+
+

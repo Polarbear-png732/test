@@ -28,8 +28,12 @@ struct session_name {
     int client_fd;
     unsigned id;
 };
+extern __thread  pthread_mutex_t friend_lock;
 extern __thread struct session_name client_session;        // 线程局部变量存储客户端会话信息
-
+extern __thread char **friends ;
+extern __thread char **online_friends; // 在线好友列表与好友列表和对应的好友数量
+extern __thread  int friend_count;
+extern __thread int online_friend_count;
 
 //以下三个结构体用于事件队列机制，实现上下线消息的及时推送
 typedef struct {
@@ -51,6 +55,15 @@ typedef struct {
     EventQueue *queue;
 } ClientEventQueueMap;
 
+ typedef struct 
+ {
+    EventQueue *queue;
+    char  ** online_friends;
+    char **friends;
+    int *friend_count;
+    int *online_friend_count;
+ }event_pthread_arg;
+  
 // 使用 extern 关键字声明全局变量
 extern struct session_name session_table[10];
 extern int session_table_index;
@@ -276,5 +289,6 @@ void init_client_queues();
 void cleanup_client_queues();
 EventQueue* find_queue(int client_fd);
 void *process_events(void *arg);
+void update_online_friends(Event *event,event_pthread_arg *event_arg);
 #endif
 

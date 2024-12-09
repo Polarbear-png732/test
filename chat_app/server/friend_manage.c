@@ -1,5 +1,10 @@
 #include "server.h"
-extern __thread struct session_name client_session;
+extern __thread  pthread_mutex_t friend_lock ;
+extern __thread struct session_name client_session;        // 线程局部变量存储客户端会话信息
+extern __thread char **friends ;
+extern __thread char **online_friends; // 在线好友列表与好友列表和对应的好友数量
+extern __thread  int friend_count;
+extern __thread int online_friend_count;
 // 创建用户处理函数
 void handle_create_user(int client_fd, char *buffer, MYSQL *conn)
 {
