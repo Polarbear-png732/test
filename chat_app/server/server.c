@@ -1,19 +1,18 @@
 #include "server.h"
- 
+
 __thread pthread_mutex_t friend_lock = PTHREAD_MUTEX_INITIALIZER;
 __thread char **friends = NULL;
 __thread char **online_friends = NULL; // 在线好友列表与好友列表和对应的好友数量
 __thread int friend_count = 0;
-__thread int online_friend_count=0;
+__thread int online_friend_count = 0;
 __thread struct session_name client_session;
 
-EventQueue *queue=NULL;
+EventQueue *queue = NULL;
 
 // 请求处理函数
 void *handle_client(void *arg)
 {
     queue = init_event_queue();
-
 
     int client_fd = *(int *)arg;
     char buffer[1024];
@@ -31,7 +30,7 @@ void *handle_client(void *arg)
     // 设置接收超时时间为 10 秒
     struct timeval timeout;
     timeout.tv_sec = 300; // 超时时间秒数
-    timeout.tv_usec = 0; // 微秒部分
+    timeout.tv_usec = 0;  // 微秒部分
     setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
 
     printf("client connection!\n");
@@ -98,9 +97,11 @@ void *handle_client(void *arg)
             create_group(client_fd, buffer, conn);
             break;
         case REQUEST_INVITE_TOGROUP:
-            invite_to_group(client_fd,buffer,conn);
+            invite_to_group(client_fd, buffer, conn);
             break;
-
+        case REQUEST_HANDLE_GROUP:
+            handle_add_group(client_fd, buffer, conn);
+            break;
         default:
             printf("未知的请求代码: %u\n", request_code);
             break;
@@ -175,29 +176,27 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn)
     mysql_free_result(res);
     push_friend(client_fd, login_req->username, conn);
 
-
     // 获取好友列表
     friends = get_friend_list(user_id, &friend_count, conn);
     push_fri_list(friends, friend_count, client_fd, conn);
-    online_friends=get_online_friends(friends,&friend_count,&online_friend_count);
-    printf("客户端：%s登录时在线好友数量%d\n",client_session.username,online_friend_count);
+    online_friends = get_online_friends(friends, &friend_count, &online_friend_count);
+    printf("客户端：%s登录时在线好友数量%d\n", client_session.username, online_friend_count);
 
     pthread_t event_thread;
-    event_pthread_arg *event_arg=(event_pthread_arg*)malloc(sizeof(event_pthread_arg));
-    event_arg->online_friends=online_friends;
-    event_arg->queue=queue;
-    event_arg->online_friend_count=&online_friend_count;
-    event_arg->friend_count=&friend_count;
-    event_arg->friends=friends;
+    event_pthread_arg *event_arg = (event_pthread_arg *)malloc(sizeof(event_pthread_arg));
+    event_arg->online_friends = online_friends;
+    event_arg->queue = queue;
+    event_arg->online_friend_count = &online_friend_count;
+    event_arg->friend_count = &friend_count;
+    event_arg->friends = friends;
     // 创建线程处理事件队列
-    pthread_create(&event_thread, NULL, process_events,(void*)event_arg);
+    pthread_create(&event_thread, NULL, process_events, (void *)event_arg);
 
     // 上线时推送消息
-    group_invite_push(client_fd,conn);
+    group_invite_push(client_fd, conn);
     offline_message_push(user_id, conn);
     on_off_push(1, friends);
 }
-
 
 // 数据库连接函数
 MYSQL *db_connect()
@@ -303,7 +302,7 @@ void send_message(int sockfd, const char *feedback)
     return;
 }
 
-//将在线用户从全局会话表中删除
+// 将在线用户从全局会话表中删除
 int delete_session(const char *session)
 {
     for (int i = 0; i < session_table_index; i++)
@@ -341,7 +340,7 @@ void send_simple(int sockfd, int success)
     return;
 }
 
-//用户上线推送好友列表
+// 用户上线推送好友列表
 void push_fri_list(char **list, int count, int client_fd, MYSQL *conn)
 {
 
@@ -370,7 +369,7 @@ void push_fri_list(char **list, int count, int client_fd, MYSQL *conn)
     send_message(client_fd, fri_list); // 发送给客户端
     return;
 }
-//发送私聊消息
+// 发送私聊消息
 void private_message(int client, char *buffer, MYSQL *conn)
 {
     PrivateMessage *message = (PrivateMessage *)buffer;
@@ -441,22 +440,23 @@ MYSQL_RES *do_query(char *query, MYSQL *conn)
 
     return result;
 }
-//用户上线时获取在线好友列表
+// 用户上线时获取在线好友列表
 char **get_online_friends(char **friends, int *friend_count, int *online_friend_count)
 {
-    int i, j, k = 0;                                                        // k用于新数组索引
+    int i, j, k = 0;                                                    // k用于新数组索引
     char **new_friends = (char **)malloc(sizeof(char *) * MAX_FRIENDS); // 新的动态数组
 
-    for (i = 0; i < MAX_FRIENDS; i++){
+    for (i = 0; i < MAX_FRIENDS; i++)
+    {
         new_friends[i] = (char *)malloc(MAX_USERNAME_LENGTH * sizeof(char));
-        }
+    }
 
     for (i = 0; i < *friend_count; i++)
     {
         for (j = 0; j < session_table_index; j++)
         {
             if (strcmp(friends[i], session_table[j].username) == 0)
-            { 
+            {
                 strcpy(new_friends[k], friends[i]);
                 k++;
                 break; // 匹配上了直接跳出内层循环
@@ -467,7 +467,7 @@ char **get_online_friends(char **friends, int *friend_count, int *online_friend_
     *online_friend_count = k;
     return new_friends;
 }
-//从数据库中获取用户好友列表
+// 从数据库中获取用户好友列表
 char **get_friend_list(int user_id, int *friend_count, MYSQL *conn)
 {
     // 分配结果数组
@@ -516,7 +516,7 @@ char **get_friend_list(int user_id, int *friend_count, MYSQL *conn)
 
     return friend_list;
 }
-//上下线推送消息给在线好友
+// 上下线推送消息给在线好友
 void on_off_push(int on, char **friends)
 {
 
@@ -543,15 +543,15 @@ void on_off_push(int on, char **friends)
         for (i = 0; i < online_friend_count; i++)
         {
             int index = find_session_index(1, online_friends[i]);
-            send_message(session_table[index].client_fd, online_push);//向好友客户端发送上线消息
+            send_message(session_table[index].client_fd, online_push); // 向好友客户端发送上线消息
 
-            EventQueue *queue =find_queue(session_table[index].client_fd);//向好友服务器进程的事件队列中插入上线事件
+            EventQueue *queue = find_queue(session_table[index].client_fd); // 向好友服务器进程的事件队列中插入上线事件
             push_event(queue, event);
         }
         return;
     }
 }
-//离线消息推送
+// 离线消息推送
 void offline_message_push(unsigned int user_id, MYSQL *conn)
 {
     char query[512];
@@ -584,7 +584,7 @@ int online_query(char *friendname)
     int i = 0;
     for (i; i < online_friend_count; i++)
     {
-        if (strcmp(online_friends[i],friendname)  == 0)
+        if (strcmp(online_friends[i], friendname) == 0)
         {
             return 1;
         }
@@ -600,7 +600,7 @@ int find_uid(char *token)
     int id = session_table[i].id;
     return id;
 }
-//根据会话标识符找到在线用户在全局会话表中的索引
+// 根据会话标识符找到在线用户在全局会话表中的索引
 int find_session_index(int search_by, const char *value)
 {
     for (int i = 0; i < session_table_index; ++i)
@@ -623,7 +623,7 @@ int find_session_index(int search_by, const char *value)
     return -1; // 如果未找到匹配项，返回 -1
 }
 
-//从数据库中根据用户名查找用户id
+// 从数据库中根据用户名查找用户id
 int find_id_mysql(char *name, MYSQL *conn)
 {
     char query[512];
@@ -636,5 +636,3 @@ int find_id_mysql(char *name, MYSQL *conn)
     mysql_free_result(result);
     return id;
 }
-
-

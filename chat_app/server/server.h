@@ -78,9 +78,12 @@ extern int map_index ;
 #define REQUEST_HANDELE_ADD 10011
 #define REQUEST_DELETE_FRIEND 10004
 #define REQUEST_REMARK_FRIEND 10005
+
 #define REQUEST_INVITE_TOGROUP 10013
 #define REQUEST_CREATE_GROUP 10006
+#define REQUEST_HANDLE_GROUP 10031
 #define REQUEST_GROUP_MESSAGE 10007
+
 #define REQUEST_PRIVATE_MESSAGE 10008
 #define REQUEST_FILE_TRANSFER 10009
 #define REQUEST_CREATEUSER  10010
@@ -161,14 +164,14 @@ typedef struct {
 //响应用简单的回复报文
 
 
-// 创建群组请求结构体
+// 创建群组,处理群聊请求，请求结构体
 typedef struct {
     unsigned int length;
     unsigned int request_code; 
     int action;
     char session_token[64];
     char group_name[64];
-} GroupCreateRequest;
+} GroupCreateRequest,HandleGroupInvite;
 //邀请好友进群的结构体
 typedef struct {
     unsigned int length;
@@ -291,5 +294,7 @@ EventQueue* find_queue(int client_fd);
 void *process_events(void *arg);
 void update_online_friends(Event *event,event_pthread_arg *event_arg);
 void group_invite_push(int client_fd,MYSQL*conn);
+int find_group_id(char *groupname ,MYSQL *conn);
+void handle_add_group(int client_fd, char *buffer, MYSQL *conn);
 #endif
 

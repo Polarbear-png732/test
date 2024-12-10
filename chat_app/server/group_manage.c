@@ -65,28 +65,84 @@ void invite_to_group(int client_fd, char *buffer, MYSQL *conn)
 }
 
 // 用户上线时，从数据库中查询，群聊邀请，并推送给用户
-void group_invite_push(int client_fd,MYSQL*conn)
+void group_invite_push(int client_fd, MYSQL *conn)
 {
     char query[512];
     char push[256];
     char temp[128];
     MYSQL_RES *result;
     MYSQL_ROW row;
-    int invitee_id=client_session.id;
-    snprintf(query, sizeof(query), 
+    int invitee_id = client_session.id;
+    snprintf(query, sizeof(query),
              "SELECT u.username AS inviter_name, g.group_name "
              "FROM group_invites gi "
              "JOIN groups g ON gi.group_id = g.id "
              "JOIN users u ON gi.sender_id = u.id "
              "WHERE gi.invitee_id = %d AND gi.status = 'pending' "
-             "ORDER BY u.username ASC, g.group_name ASC;", invitee_id);
-    result=do_query(query,conn);
+             "ORDER BY u.username ASC, g.group_name ASC;",
+             invitee_id);
+    result = do_query(query, conn);
     while (row = mysql_fetch_row(result))
     {
-    snprintf(temp ,sizeof(temp),"%s邀请你进入群聊%s\n",row[0],row[1]);
-    strcat(push,temp);
+        snprintf(temp, sizeof(temp), "%s邀请你进入群聊%s\n", row[0], row[1]);
+        strcat(push, temp);
     }
     mysql_free_result(result);
-    printf("%s\n",push);
-    send_message(client_fd,push);
+    printf("%s\n", push);
+    send_message(client_fd, push);
+}
+
+//处理同意和拒绝进群的请求
+void handle_add_group(int client_fd, char *buffer, MYSQL *conn)
+{
+    // 根据请求报文中的群聊名称，和会话标识符，找到对应的用户的记录，将群聊邀请状态改为接受
+    // 再将用户插入到对应的群组成员表中
+
+    HandleGroupInvite *handle_group = (HandleGroupInvite *)buffer;
+    int action = ntohl(handle_group->action);
+    char status[16];
+    char query[512];
+    MYSQL_RES *result;
+    MYSQL_ROW row;
+
+    int grou_id = find_group_id(handle_group->group_name,conn);
+    int invitee_id = client_session.id;
+    if (action)
+    {
+        strcpy(status, "accepted");
+        snprintf(query, sizeof(query),
+                 "UPDATE group_invites "
+                 "SET status= '%s' "
+                 "where group_id=%d and invitee_id=%d;",
+                 status, grou_id, invitee_id);
+        do_query(query, conn);
+        snprintf(query, sizeof(query),
+                 "INSERT INTO group_members (group_id,user_id) VALUES(%d,%d);", grou_id, invitee_id);
+        do_query(query, conn);
+    }
+    else
+    {
+        strcpy(status, "rejected");
+        snprintf(query, sizeof(query),
+                 "UPDATE group_invites "
+                 "SET status= '%s' "
+                 "where group_id=%d and invitee_id=%d;",
+                 status, grou_id, invitee_id);
+        do_query(query,conn);
+    }
+}
+
+int  find_group_id(char *groupname, MYSQL *conn)
+{
+    char query[512];
+    MYSQL_RES *result;
+    MYSQL_ROW row;
+    int group_id;
+    snprintf(query, sizeof(query),
+             "SELECT id FROM groups where group_name='%s';", groupname);
+    result = do_query(query, conn);
+    row = mysql_fetch_row(result);
+    group_id=atoi(row[0]);
+    mysql_free_result(result);
+    return group_id;
 }
