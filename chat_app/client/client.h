@@ -17,9 +17,11 @@
 #define REQUEST_HANDELE_ADD 10011
 #define REQUEST_DELETE_FRIEND 10004
 #define REQUEST_REMARK_FRIEND 10005
+
 #define REQUEST_INVITE_TOGROUP 10013
 #define REQUEST_CREATE_GROUP 10006
 #define REQUEST_GROUP_MESSAGE 10007
+#define REQUEST_HANDLE_GROUP 10031
 #define REQUEST_PRIVATE_MESSAGE 10008
 #define REQUEST_FILE_TRANSFER 10009
 #define REQUEST_CREATEUSER  10010
@@ -110,7 +112,7 @@ typedef struct {
     int action;
     char session_token[64];
     char group_name[64];
-} GroupCreateRequest;
+} GroupCreateRequest,HandleGroupInvite;
 //邀请好友进群的结构,也可用于删除好友
 typedef struct {
     unsigned int length;
@@ -130,6 +132,7 @@ typedef struct {
     char group_id[64];
     char message[256];
 } GroupMessage;
+
 typedef struct {
     unsigned int length;
     unsigned int status_code; // 200=成功, 500=失败
@@ -177,6 +180,14 @@ void send_polling(void* arg);
 // 客户端全局变量
 extern int client_fd;   // 客户端套接字
 extern pthread_mutex_t lock;  // 互斥锁用于控制对共享资源的访问
+
+LoginRequest *build_login_request();
+CreateUser *build_create_user_request();
+FriendRequest *build_friend_request();
+HandleFriendRequest *build_handle_friend_request();
+PrivateMessage *build_private_message_request();
+GroupCreateRequest *build_group_request();
+InviteRequest *build_invite_request();
 
 #endif // CLIENT_H
 

@@ -290,5 +290,6 @@ void cleanup_client_queues();
 EventQueue* find_queue(int client_fd);
 void *process_events(void *arg);
 void update_online_friends(Event *event,event_pthread_arg *event_arg);
+void group_invite_push(int client_fd,MYSQL*conn);
 #endif
 

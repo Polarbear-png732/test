@@ -130,6 +130,11 @@ void update_online_friends(Event *event, event_pthread_arg *event_arg)
         strncpy(event_arg->online_friends[*event_arg->online_friend_count], event->username, MAX_USERNAME_LENGTH - 1);
         (*event_arg->online_friend_count)++;
         printf("客户端：test，当前在线好友数量：%d\n", *event_arg->online_friend_count);
+        for (int i = 0; i < *event_arg->online_friend_count; i++)
+        {
+            printf("%s  ", event_arg->online_friends[i]);
+        }
+        printf("\n");
     }
     else
     {
@@ -147,5 +152,10 @@ void update_online_friends(Event *event, event_pthread_arg *event_arg)
         }
         (*event_arg->online_friend_count)--;
         printf("客户端：test，当前在线好友数量：%d\n", *event_arg->online_friend_count);
+        for (int i = 0; i < *event_arg->online_friend_count; i++)
+        {
+            printf("%s  ", event_arg->online_friends[i]);
+        }
+        printf("\n");
     }
 }

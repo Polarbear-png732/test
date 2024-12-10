@@ -191,7 +191,9 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn)
     event_arg->friends=friends;
     // 创建线程处理事件队列
     pthread_create(&event_thread, NULL, process_events,(void*)event_arg);
-    
+
+    // 上线时推送消息
+    group_invite_push(client_fd,conn);
     offline_message_push(user_id, conn);
     on_off_push(1, friends);
 }
