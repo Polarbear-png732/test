@@ -12,6 +12,9 @@ EventQueue *queue = NULL;
 // 请求处理函数
 void *handle_client(void *arg)
 {
+    pthread_t main_thread = pthread_self();
+    pthread_t *queue_pthread = (pthread_t*)malloc(sizeof(pthread_t));
+    printf("当前主线程：%lu\n", main_thread);
     queue = init_event_queue();
 
     int client_fd = *(int *)arg;
@@ -72,7 +75,7 @@ void *handle_client(void *arg)
         switch (request_code)
         {
         case REQUEST_LOGIN:
-            handle_login(client_fd, buffer, conn);
+            handle_login(client_fd, buffer, conn,queue_pthread);
             break;
         case REQUEST_CREATEUSER:
             handle_create_user(client_fd, buffer, conn);
@@ -102,6 +105,9 @@ void *handle_client(void *arg)
         case REQUEST_HANDLE_GROUP:
             handle_add_group(client_fd, buffer, conn);
             break;
+        case CLIENT_EXIT:
+            clietn_exit(queue_pthread);
+             break;
         default:
             printf("未知的请求代码: %u\n", request_code);
             break;
@@ -127,7 +133,7 @@ void *handle_client(void *arg)
 }
 
 // 登录处理函数
-void handle_login(int client_fd, char *buffer, MYSQL *conn)
+void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pthread)
 {
     LoginRequest *login_req = (LoginRequest *)buffer;
 
@@ -183,6 +189,7 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn)
     printf("客户端：%s登录时在线好友数量%d\n", client_session.username, online_friend_count);
 
     pthread_t event_thread;
+    printf("事件队列线程：%lu", event_thread);
     event_pthread_arg *event_arg = (event_pthread_arg *)malloc(sizeof(event_pthread_arg));
     event_arg->online_friends = online_friends;
     event_arg->queue = queue;
@@ -191,6 +198,7 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn)
     event_arg->friends = friends;
     // 创建线程处理事件队列
     pthread_create(&event_thread, NULL, process_events, (void *)event_arg);
+    *queue_pthread = event_thread;
 
     // 上线时推送消息
     group_invite_push(client_fd, conn);
@@ -584,7 +592,7 @@ int online_query(char *name)
     int i = 0;
     for (i; i < session_table_index; i++)
     {
-        if (strcmp(session_table[i].username,name) == 0)
+        if (strcmp(session_table[i].username, name) == 0)
         {
             return 1;
         }
@@ -635,4 +643,10 @@ int find_id_mysql(char *name, MYSQL *conn)
     int id = atoi(row[0]);
     mysql_free_result(result);
     return id;
+}
+
+void clietn_exit(pthread_t *event_pthread)
+{
+    pthread_cancel(*event_pthread);
+    pthread_cancel(pthread_self());
 }

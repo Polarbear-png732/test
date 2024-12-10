@@ -8,6 +8,10 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 
+#include <unistd.h>
+#include <signal.h>
+
+
 // 协议请求类型
 // 请求码定义
 #define REQUEST_LOGIN 10001
@@ -33,6 +37,8 @@
 #define SUCCESS 200
 #define FAIL 500
 
+#define CLIENT_EXIT 10000
+
 #define TOKEN_LEN 64
 #define MAX_USERNAME_LENGTH 32
 typedef struct 
@@ -49,6 +55,11 @@ typedef struct {
     char username[32];
     char password[32];
 } LoginRequest;
+//客户端退出
+typedef struct {
+    unsigned int length;
+    unsigned int request_code; // 请求码
+} ClientExit;
 
 // 创建用户请求结构体
 typedef struct {
@@ -190,6 +201,7 @@ PrivateMessage *build_private_message_request();
 GroupCreateRequest *build_group_request();
 InviteRequest *build_invite_request();
 HandleGroupInvite *build_handle_group_request();
+void exit_client();
 
 #endif // CLIENT_H
 

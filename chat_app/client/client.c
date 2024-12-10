@@ -9,11 +9,9 @@ char session_token[64];                           // 会话标识符
 Polling polling;
 int main()
 {
-    pthread_t send_thread, receive_thread, polling_pthread;
-
     // 初始化客户端
     init_client();
-
+    pthread_t send_thread, receive_thread, polling_pthread;
     // 创建线程发送请求
     if (pthread_create(&send_thread, NULL, send_request, NULL) != 0)
     {
@@ -35,8 +33,7 @@ int main()
     }*/
     // 等待线程结束
     pthread_join(send_thread, NULL);
-    // pthread_join(polling_pthread, NULL);
-
+    pthread_join(receive_thread, NULL);
     // 关闭套接字
     close(client_fd);
 
@@ -44,14 +41,15 @@ int main()
 }
 
 // 发送请求函数
-// 发送请求函数
 void *send_request(void *arg)
 {
+
     int action;
     printf("1.登录 2.创建用户3.添加好友或删除4.处理好友请求\n5.发送私聊消息6.创建群或者删除7.邀请好友入群或者踢人\n8.处理群聊邀请");
-
+    pthread_detach(pthread_self());
     while (1)
     {
+
         scanf("%d", &action);
         void *request = NULL;
         unsigned int len = 0;
@@ -90,6 +88,9 @@ void *send_request(void *arg)
             request = build_handle_group_request();
             len = sizeof(InviteRequest);
             break;
+        case 9:
+            exit_client();
+            break;
         default:
             printf("无效的操作\n");
             continue;
@@ -103,12 +104,70 @@ void *send_request(void *arg)
             free(request); // 释放动态分配的内存
         }
     }
+}
+
+// 接收响应函数
+void *receive_response(void *arg)
+{
+
+    char buffer[2048];
+    unsigned int req_length;
+    unsigned int size_len = sizeof(req_length);
+    while (1)
+    {
+        if (recv_full(client_fd, buffer, size_len) == 0)
+        {
+            break;
+        } // 先接收报文长度
+        req_length = ntohl(*(unsigned int *)buffer);                    // 将接收到的报文长度从网络字节序转换为主机字节序
+        recv_full(client_fd, buffer + size_len, req_length - size_len); // 接收剩余的数据
+        unsigned int response_code = ntohl(*(unsigned int *)(buffer + size_len));
+
+        switch (response_code)
+        {
+        case RESPONSE_LOGIN:
+        {
+            LoginResponse *response = (LoginResponse *)buffer;
+            printf("Login response:\n");
+            printf("Status Code: %u\n", ntohl(response->status_code));
+            strncpy(session_token, response->session_token, sizeof(session_token) - 1);
+            session_token[sizeof(session_token) - 1] = '\0';
+            printf("%s\n", session_token);
+            break;
+        }
+        case SIMPLE_RESPONSE:
+        {
+            SimpleResponse *resp = (SimpleResponse *)buffer;
+            printf("Server Response: %u\n", ntohl(resp->status_code));
+            break;
+        }
+        default:
+        {
+            FeedbackMessage *message = (FeedbackMessage *)buffer;
+            printf("%s\n", message->message);
+            break;
+        }
+        }
+    }
     pthread_detach(pthread_self());
     return NULL;
 }
 
+void exit_client()
+{
+    unsigned int len = sizeof(ClientExit);
+    ClientExit *exit = (ClientExit *)malloc(len);
+    exit->length = htonl(len);
+    exit->request_code = htonl(CLIENT_EXIT);
+    send(client_fd, exit, len, 0);
+    free(exit);
+    pthread_mutex_lock(&lock); 
+    close(client_fd); // 确保socket资源释放
+    pthread_mutex_unlock(&lock);
+    pid_t pid = getpid();
+    kill(pid, SIGKILL);
+}
 // 构造请求函数实现
-
 LoginRequest *build_login_request()
 {
     LoginRequest *request = malloc(sizeof(LoginRequest));
@@ -265,53 +324,6 @@ HandleGroupInvite *build_handle_group_request()
     request->length = htonl(sizeof(HandleGroupInvite));
     return request;
 }
-// 接收响应函数
-void *receive_response(void *arg)
-{
-
-    char buffer[2048];
-    unsigned int req_length;
-    unsigned int size_len = sizeof(req_length);
-    while (1)
-    {
-
-        if (recv_full(client_fd, buffer, size_len) == 0)
-        {
-            break;
-        } // 先接收报文长度
-        req_length = ntohl(*(unsigned int *)buffer);                    // 将接收到的报文长度从网络字节序转换为主机字节序
-        recv_full(client_fd, buffer + size_len, req_length - size_len); // 接收剩余的数据
-        unsigned int response_code = ntohl(*(unsigned int *)(buffer + size_len));
-
-        switch (response_code)
-        {
-        case RESPONSE_LOGIN:
-        {
-            LoginResponse *response = (LoginResponse *)buffer;
-            printf("Login response:\n");
-            printf("Status Code: %u\n", ntohl(response->status_code));
-            strncpy(session_token, response->session_token, sizeof(session_token) - 1);
-            session_token[sizeof(session_token) - 1] = '\0';
-            printf("%s\n", session_token);
-            break;
-        }
-        case SIMPLE_RESPONSE:
-        {
-            SimpleResponse *resp = (SimpleResponse *)buffer;
-            printf("Server Response: %u\n", ntohl(resp->status_code));
-            break;
-        }
-        default:
-        {
-            FeedbackMessage *message = (FeedbackMessage *)buffer;
-            printf("%s\n", message->message);
-            break;
-        }
-        }
-    }
-    pthread_detach(pthread_self());
-    return NULL;
-}
 
 // 初始化客户端
 void init_client()
@@ -343,6 +355,7 @@ void init_client()
 
 int recv_full(int sock, void *buf, size_t len)
 {
+
     size_t total_received = 0;  // 已接收字节数
     ssize_t bytes_received = 0; // 每次调用 recv 接收到的字节数
 

@@ -89,6 +89,8 @@ extern int map_index ;
 #define REQUEST_CREATEUSER  10010
 #define REQUEST_POLLING 10012
 
+#define CLIENT_EXIT 10000
+
 #define RESPONSE_MESSAGE 10040
 #define SIMPLE_RESPONSE 10050
 #define SUCCESS 200
@@ -237,7 +239,7 @@ int init_server();
 void* handle_client(void* arg);
 
 // 登录功能处理
-void handle_login(int client_fd, char* buffer,MYSQL* conn);
+void handle_login(int client_fd, char *buffer, MYSQL *conn,pthread_t* queue_pthread);
 // 添加好友处理
 void handle_add_friend(int client_fd,char *buffer,MYSQL *conn);
 // 创建用户处理
@@ -296,5 +298,7 @@ void update_online_friends(Event *event,event_pthread_arg *event_arg);
 void group_invite_push(int client_fd,MYSQL*conn);
 int find_group_id(char *groupname ,MYSQL *conn);
 void handle_add_group(int client_fd, char *buffer, MYSQL *conn);
+
+void clietn_exit(pthread_t*event_pthread );
 #endif
 
