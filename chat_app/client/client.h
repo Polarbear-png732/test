@@ -22,6 +22,7 @@
 #define REQUEST_CREATE_GROUP 10006
 #define REQUEST_GROUP_MESSAGE 10007
 #define REQUEST_HANDLE_GROUP 10031
+
 #define REQUEST_PRIVATE_MESSAGE 10008
 #define REQUEST_FILE_TRANSFER 10009
 #define REQUEST_CREATEUSER  10010
@@ -188,6 +189,7 @@ HandleFriendRequest *build_handle_friend_request();
 PrivateMessage *build_private_message_request();
 GroupCreateRequest *build_group_request();
 InviteRequest *build_invite_request();
+HandleGroupInvite *build_handle_group_request();
 
 #endif // CLIENT_H
 

@@ -1,9 +1,9 @@
 #include "server.h"
-extern __thread  pthread_mutex_t friend_lock ;
-extern __thread struct session_name client_session;        // 线程局部变量存储客户端会话信息
-extern __thread char **friends ;
+extern __thread pthread_mutex_t friend_lock;
+extern __thread struct session_name client_session; // 线程局部变量存储客户端会话信息
+extern __thread char **friends;
 extern __thread char **online_friends; // 在线好友列表与好友列表和对应的好友数量
-extern __thread  int friend_count;
+extern __thread int friend_count;
 extern __thread int online_friend_count;
 // 创建用户处理函数
 void handle_create_user(int client_fd, char *buffer, MYSQL *conn)
@@ -35,7 +35,7 @@ void handle_create_user(int client_fd, char *buffer, MYSQL *conn)
     return;
 }
 
-// 处理添加好友请求
+// 处理添加或删除好友请求
 void handle_add_friend(int client_fd, char *buffer, MYSQL *conn)
 {
     FriendRequest *add_friend = (FriendRequest *)buffer;
@@ -86,25 +86,21 @@ void handle_add_friend(int client_fd, char *buffer, MYSQL *conn)
                                        "WHERE (user_id = %d AND friend_id = %d) OR (user_id = %d AND friend_id = %d);",
                  user_id, friend_id, friend_id, user_id);
 
-        if (mysql_query(conn, query))
-        {
-            fprintf(stderr, "Error: %s\n", mysql_error(conn));
-            return;
-        }
+        do_query(query, conn);
         return;
     }
 
-    // 插入用户数据到数据库
+    if (online_query(add_friend->friend_username))          //用户在线，发送消息提醒
+    {
+        char message[128];
+        int i = find_session_index(1, add_friend->friend_username);
+        snprintf(message, sizeof(message), "收到来自%s的好友请求\n", client_session.username);
+        send_message(session_table[i].client_fd, message);
+    }
+    // 如果用户不在线，数据插入到数据库，上线时推送
     snprintf(query, sizeof(query), "INSERT INTO friends (user_id, friend_id) VALUES ('%u','%u');",
              user_id, friend_id);
-
-
-    if (mysql_query(conn, query))
-    {
-        send_message(client_fd, "Add friend failed");
-        mysql_free_result(result);
-        return;
-    }
+    do_query(query, conn);
 
     send_simple(client_fd, SUCCESS);
     mysql_free_result(result);
@@ -196,4 +192,3 @@ void push_friend(int client_fd, char *name, MYSQL *conn)
     mysql_free_result(result);
     return;
 }
-

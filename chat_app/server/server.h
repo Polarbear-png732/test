@@ -281,7 +281,7 @@ char **get_online_friends(char **friends, int *friend_count,int *online_friend_c
 void offline_message_push(unsigned int user_id,MYSQL*conn);
 void on_off_push(int on,char** friends);
 void create_group(int client_fd, char *buffer, MYSQL *conn);
-int online_query(char *friendname );
+int online_query(char *friendname);
 void invite_to_group(int client_fd, char *buffer, MYSQL *conn);
 MYSQL_RES * do_query(char *query,MYSQL *conn);
 

@@ -578,13 +578,13 @@ void offline_message_push(unsigned int user_id, MYSQL *conn)
     do_query(query, conn);
     return;
 }
-// 检查好友是否在线
-int online_query(char *friendname)
+// 检查用户是否在线
+int online_query(char *name)
 {
     int i = 0;
-    for (i; i < online_friend_count; i++)
+    for (i; i < session_table_index; i++)
     {
-        if (strcmp(online_friends[i], friendname) == 0)
+        if (strcmp(session_table[i].username,name) == 0)
         {
             return 1;
         }
@@ -603,7 +603,7 @@ int find_uid(char *token)
 // 根据会话标识符找到在线用户在全局会话表中的索引
 int find_session_index(int search_by, const char *value)
 {
-    for (int i = 0; i < session_table_index; ++i)
+    for (int i = 0; i < session_table_index; i++)
     {
         if (search_by == 0)
         { // 按 session 字段查找

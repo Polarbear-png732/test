@@ -33,19 +33,11 @@ void invite_to_group(int client_fd, char *buffer, MYSQL *conn)
     InviteRequest *invite = (InviteRequest *)buffer;
     int action = ntohl(invite->action);
     // 好友在线,直接转发邀请，否则先存入数据库
-    int friend_index = find_session_index(0, invite->friendname);
-    if (online_query(invite->friendname))
-    {
-
-        char group_invite[128];
-        snprintf(group_invite, sizeof(group_invite),
-                 "%s邀请你进入群聊：%s", client_session.username, invite->group_name);
-        send_message(session_table[friend_index].client_fd, group_invite);
-        return;
-    }
+    int friend_index = find_session_index(1, invite->friendname);
     char query[512];
     MYSQL_RES *result;
     MYSQL_ROW row;
+
     snprintf(query, sizeof(query),
              "SELECT u.id AS user_id, g.id AS group_id "
              "FROM users u "
@@ -61,7 +53,14 @@ void invite_to_group(int client_fd, char *buffer, MYSQL *conn)
                                    "(group_id,sender_id,invitee_id,status) VALUES ('%d','%d','%d','pending');",
              group_id, client_session.id, friend_id);
     do_query(query, conn);
-    return;
+    if (online_query(invite->friendname))
+    {
+        char group_invite[128];
+        snprintf(group_invite, sizeof(group_invite),
+                 "%s邀请你进入群聊：%s", client_session.username, invite->group_name);
+        send_message(session_table[friend_index].client_fd, group_invite);
+        return;
+    }
 }
 
 // 用户上线时，从数据库中查询，群聊邀请，并推送给用户
@@ -92,7 +91,7 @@ void group_invite_push(int client_fd, MYSQL *conn)
     send_message(client_fd, push);
 }
 
-//处理同意和拒绝进群的请求
+// 处理同意和拒绝进群的请求
 void handle_add_group(int client_fd, char *buffer, MYSQL *conn)
 {
     // 根据请求报文中的群聊名称，和会话标识符，找到对应的用户的记录，将群聊邀请状态改为接受
@@ -105,7 +104,7 @@ void handle_add_group(int client_fd, char *buffer, MYSQL *conn)
     MYSQL_RES *result;
     MYSQL_ROW row;
 
-    int grou_id = find_group_id(handle_group->group_name,conn);
+    int grou_id = find_group_id(handle_group->group_name, conn);
     int invitee_id = client_session.id;
     if (action)
     {
@@ -128,11 +127,11 @@ void handle_add_group(int client_fd, char *buffer, MYSQL *conn)
                  "SET status= '%s' "
                  "where group_id=%d and invitee_id=%d;",
                  status, grou_id, invitee_id);
-        do_query(query,conn);
+        do_query(query, conn);
     }
 }
 
-int  find_group_id(char *groupname, MYSQL *conn)
+int find_group_id(char *groupname, MYSQL *conn)
 {
     char query[512];
     MYSQL_RES *result;
@@ -142,7 +141,7 @@ int  find_group_id(char *groupname, MYSQL *conn)
              "SELECT id FROM groups where group_name='%s';", groupname);
     result = do_query(query, conn);
     row = mysql_fetch_row(result);
-    group_id=atoi(row[0]);
+    group_id = atoi(row[0]);
     mysql_free_result(result);
     return group_id;
 }

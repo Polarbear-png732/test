@@ -251,7 +251,7 @@ InviteRequest *build_invite_request()
 HandleGroupInvite *build_handle_group_request()
 {
     HandleGroupInvite *request = malloc(sizeof(HandleGroupInvite));
-    request->request_code = htonl(REQUEST_HANDLE_GROUP);
+
     printf("请输入要处理的群聊名称：\n");
     scanf("%s", request->group_name);
     printf("同意输入1，拒绝0\n");
@@ -259,6 +259,8 @@ HandleGroupInvite *build_handle_group_request()
     scanf("%d", &action);
 
     strncpy(request->session_token, session_token, TOKEN_LEN - 1);
+    request->request_code = htonl(REQUEST_HANDLE_GROUP);
+    request->action = htonl(action);
     request->session_token[TOKEN_LEN - 1] = '\0';
     request->length = htonl(sizeof(HandleGroupInvite));
     return request;
