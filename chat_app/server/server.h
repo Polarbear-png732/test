@@ -20,6 +20,7 @@
 #define MAX_USERNAME_LENGTH 32
 #define MAX_CLIENTS 10
 #define QUEUE_SIZE 10
+#define MAX_MEMBERS 10
 
 
 struct session_name {
@@ -35,6 +36,13 @@ extern __thread char **online_friends; // 在线好友列表与好友列表和�
 extern __thread  int friend_count;
 extern __thread int online_friend_count;
 
+typedef struct {
+    unsigned int group_id;
+    char group_name[32];
+    char members[MAX_MEMBERS][MAX_USERNAME_LENGTH];
+    int member_count;
+} Group;
+extern Group groups[10];
 //以下三个结构体用于事件队列机制，实现上下线消息的及时推送
 typedef struct {
     int event_type;  // 1 = 上线通知, 0 = 下线通知
@@ -184,13 +192,18 @@ typedef struct {
     char group_name[64];
 } InviteRequest;
 // 群组消息广播结构体
-typedef struct {
+typedef struct
+{
     unsigned int length;
     unsigned int request_code; // 请求码
+    unsigned int group_id;
     char session_token[64];
-    char group_id[64];
     char message[256];
 } GroupMessage;
+
+//群组及其成员结构体
+
+
 typedef struct {
     unsigned int length;
     unsigned int status_code; // 200=成功, 500=失败
@@ -298,6 +311,26 @@ void update_online_friends(Event *event,event_pthread_arg *event_arg);
 void group_invite_push(int client_fd,MYSQL*conn);
 int find_group_id(char *groupname ,MYSQL *conn);
 void handle_add_group(int client_fd, char *buffer, MYSQL *conn);
+void group_message(int client_fd, char *buffer, MYSQL *conn);
+int get_groupnum(MYSQL*conn);
+
+
+
+
+// 声明获取群组成员的函数
+void get_groupmember(Group *groups, MYSQL *conn);
+
+// 声明向群组添加成员的函数
+int add_member_to_group(Group *groups, unsigned int group_id, const char* username);
+
+// 声明从群组中移除成员的函数
+int remove_member_from_group(Group *groups, unsigned int group_id, const char* username);
+
+// 声明添加新群组的函数
+int add_group(Group *groups, unsigned int group_id, const char* group_name);
+// 声明解散群组的函数
+int dissolve_group(Group *groups, unsigned int group_id);
+void print_groups(Group *groups, MYSQL *conn);
 
 void clietn_exit(pthread_t*event_pthread );
 #endif

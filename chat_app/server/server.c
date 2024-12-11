@@ -13,20 +13,21 @@ EventQueue *queue = NULL;
 void *handle_client(void *arg)
 {
     pthread_t main_thread = pthread_self();
-    pthread_t *queue_pthread = (pthread_t*)malloc(sizeof(pthread_t));
+    pthread_t *queue_pthread = (pthread_t *)malloc(sizeof(pthread_t));
     printf("当前主线程：%lu\n", main_thread);
     queue = init_event_queue();
 
     int client_fd = *(int *)arg;
     char buffer[1024];
     MYSQL *conn = db_connect();
+    print_groups(groups, conn);
     if (!conn)
     {
         printf("数据库连接失败！\n");
         close(client_fd);
         return NULL;
     }
-
+    get_groupmember(groups, conn);
     unsigned int req_length;
     unsigned int size_len = sizeof(req_length);
 
@@ -75,7 +76,7 @@ void *handle_client(void *arg)
         switch (request_code)
         {
         case REQUEST_LOGIN:
-            handle_login(client_fd, buffer, conn,queue_pthread);
+            handle_login(client_fd, buffer, conn, queue_pthread);
             break;
         case REQUEST_CREATEUSER:
             handle_create_user(client_fd, buffer, conn);
@@ -107,7 +108,10 @@ void *handle_client(void *arg)
             break;
         case CLIENT_EXIT:
             clietn_exit(queue_pthread);
-             break;
+            break;
+        case REQUEST_GROUP_MESSAGE:
+            clietn_exit(queue_pthread);
+            break;
         default:
             printf("未知的请求代码: %u\n", request_code);
             break;

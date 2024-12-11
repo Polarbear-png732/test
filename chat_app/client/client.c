@@ -45,7 +45,7 @@ void *send_request(void *arg)
 {
 
     int action;
-    printf("1.登录 2.创建用户3.添加好友或删除4.处理好友请求\n5.发送私聊消息6.创建群或者删除7.邀请好友入群或者踢人\n8.处理群聊邀请");
+    printf("1.登录 2.创建用户3.添加好友或删除4.处理好友请求\n5.发送私聊消息6.创建群或者删除7.邀请好友入群或者踢人\n8.处理群聊邀请.9.退出10.发送群聊消息");
     pthread_detach(pthread_self());
     while (1)
     {
@@ -90,6 +90,10 @@ void *send_request(void *arg)
             break;
         case 9:
             exit_client();
+            break;
+        case 10:
+            build_group_message();
+            len = sizeof(InviteRequest);
             break;
         default:
             printf("无效的操作\n");
@@ -161,7 +165,7 @@ void exit_client()
     exit->request_code = htonl(CLIENT_EXIT);
     send(client_fd, exit, len, 0);
     free(exit);
-    pthread_mutex_lock(&lock); 
+    pthread_mutex_lock(&lock);
     close(client_fd); // 确保socket资源释放
     pthread_mutex_unlock(&lock);
     pid_t pid = getpid();
@@ -293,7 +297,7 @@ InviteRequest *build_invite_request()
         exit(1);
     }
     request->request_code = htonl(REQUEST_INVITE_TOGROUP);
-    printf("添加好友输入1，删除好友输入0\n");
+    printf("邀请好友进群输入1，删除群成员输入0\n");
     int action;
     scanf("%d", &action);
     printf("请输入群聊名称：\n");
@@ -318,13 +322,29 @@ HandleGroupInvite *build_handle_group_request()
     scanf("%d", &action);
 
     strncpy(request->session_token, session_token, TOKEN_LEN - 1);
+    request->session_token[TOKEN_LEN - 1] = '\0';
     request->request_code = htonl(REQUEST_HANDLE_GROUP);
     request->action = htonl(action);
-    request->session_token[TOKEN_LEN - 1] = '\0';
+
     request->length = htonl(sizeof(HandleGroupInvite));
     return request;
 }
 
+GroupMessage *build_group_message()
+{
+    GroupMessage *request = malloc(sizeof(GroupMessage));
+    printf("请输入群聊id：\n");
+    scanf("%u", &request->group_id);
+    printf("请输入消息：\n");
+    scanf("%s", request->message);
+
+    request->group_id = htonl(request->group_id);
+    strncpy(request->session_token, session_token, TOKEN_LEN - 1);
+    request->session_token[TOKEN_LEN - 1] = '\0';
+    request->request_code = htonl(REQUEST_GROUP_MESSAGE);
+    request->length = htonl(sizeof(GroupMessage));
+    return request;
+}
 // 初始化客户端
 void init_client()
 {
