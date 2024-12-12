@@ -37,7 +37,7 @@ void create_group(int client_fd, char *buffer, MYSQL *conn)
                                    "where creator_id='%d' and group_name='%s'; ",
              creator_id, group->group_name);
     do_query(query, conn);
-    dissolve_group(groups,grou_id);
+    dissolve_group(groups, grou_id);
     return;
 }
 
@@ -70,12 +70,12 @@ void invite_to_group(int client_fd, char *buffer, MYSQL *conn)
                  group_id, friend_id);
         do_query(query, conn);
         int groupnum = get_groupnum(conn);
-        remove_member_from_group(groups,  group_id, invite->friendname);
+        remove_member_from_group(groups, group_id, invite->friendname);
         return;
     }
-snprintf(query, sizeof(query), 
-         "DELETE FROM group_members WHERE group_id='%d' AND user_id='%d';", 
-         group_id, friend_id);
+    snprintf(query, sizeof(query),
+             "INSERT INTO  group_invites (group_id,sender_id,invitee_id) VALUES ('%d','%d','%d');",
+             group_id, client_session.id, friend_id);
     do_query(query, conn);
     if (online_query(invite->friendname))
     {
@@ -144,7 +144,7 @@ void handle_add_group(int client_fd, char *buffer, MYSQL *conn)
         do_query(query, conn);
         int groupnum = get_groupnum(conn);
         add_member_to_group(groups, grou_id, client_session.username);
-        print_groups(groups,conn);
+        print_groups(groups, conn);
     }
     else
     {
@@ -183,13 +183,38 @@ void group_message(int client_fd, char *buffer, MYSQL *conn)
     unsigned int group_id = ntohl(message->group_id);
     int sender_id = find_uid(message->session_token);
 
-    snprintf(query, sizeof(query),
-             "INSERT INTO group_messages (group_id,sender_id,message) VALUES('%u,'%d','%s'); ",
+    snprintf(query, sizeof(query), // 先将消息插入群聊消息表
+             "INSERT INTO group_messages (group_id,sender_id,message) VALUES ('%u','%d','%s'); ",
              group_id, sender_id, message->message);
     do_query(query, conn);
+    online_groupmembers(groups, group_id, online_members); // 找到群中除了发消息者之外在线的人，并转发群消息
+    for (int i = 0; i < MAX_MEMBERS; i++)
+    {
+        if (strcmp(online_members[i], client_session.username) == 0||strcmp(online_members[i], "") == 0 ) //是发送这或者为空,跳过
+        {
+            continue;
+        }
+        int index = find_session_index(1, online_members[i]);
+        char group_message[512];
+        snprintf(group_message, sizeof(group_message), "来自'%s'群聊消息：%s\n", client_session.username, message->message);
+        send_message(session_table[index].client_fd, group_message);
+    }
 }
+void online_groupmembers(Group *groups, int group_id, char (*members)[MAX_USERNAME_LENGTH])
+{
 
-
+    for (int i = 0; i < MAX_MEMBERS; i++)
+    {
+        if (groups[i].group_id == group_id)
+            for (int j = 0; j < groups[i].member_count; j++)
+            {
+                if (online_query(groups[i].members[j]))
+                {
+                    strcpy(online_members[j], groups[i].members[j]);
+                }
+            }
+    }
+}
 
 // 获取当前群组数量
 int get_groupnum(MYSQL *conn)
@@ -241,7 +266,7 @@ void get_groupmember(Group *groups, MYSQL *conn)
             groups[group_index].group_id = current_group_id;
             strncpy(groups[group_index].group_name, row[1], sizeof(groups[group_index].group_name) - 1);
             groups[group_index].group_name[sizeof(groups[group_index].group_name) - 1] = '\0'; // 确保字符串结尾
-            groups[group_index].member_count = 0; // 初始化成员计数
+            groups[group_index].member_count = 0;                                              // 初始化成员计数
         }
 
         // 添加成员到当前群组
@@ -258,74 +283,92 @@ void get_groupmember(Group *groups, MYSQL *conn)
 }
 
 // 添加成员到群组
-int add_member_to_group(Group *groups, unsigned int group_id, const char* username) {
-    for (int i = 0; i < 10; i++) {
-        if (groups[i].group_id == group_id) {
+int add_member_to_group(Group *groups, unsigned int group_id, const char *username)
+{
+    for (int i = 0; i < 10; i++)
+    {
+        if (groups[i].group_id == group_id)
+        {
             // 检查是否有足够的空间加入新成员
-            if (groups[i].member_count < MAX_MEMBERS) {
+            if (groups[i].member_count < MAX_MEMBERS)
+            {
                 // 确保成员名不重复
-                for (int j = 0; j < groups[i].member_count; j++) {
-                    if (strcmp(groups[i].members[j], username) == 0) {
-                        return 0;  // 用户已经是群组成员
+                for (int j = 0; j < groups[i].member_count; j++)
+                {
+                    if (strcmp(groups[i].members[j], username) == 0)
+                    {
+                        return 0; // 用户已经是群组成员
                     }
                 }
                 // 加入新成员
                 strncpy(groups[i].members[groups[i].member_count], username, MAX_USERNAME_LENGTH - 1);
-                groups[i].members[groups[i].member_count][MAX_USERNAME_LENGTH - 1] = '\0';  // 确保字符串结尾
+                groups[i].members[groups[i].member_count][MAX_USERNAME_LENGTH - 1] = '\0'; // 确保字符串结尾
                 groups[i].member_count++;
-                return 1;  // 成员加入成功
+                return 1; // 成员加入成功
             }
-            return 0;  // 群组已满，无法加入新成员
+            return 0; // 群组已满，无法加入新成员
         }
     }
-    return 0;  // 找不到指定的群组
+    return 0; // 找不到指定的群组
 }
 
 // 从群组中移除成员
-int remove_member_from_group(Group *groups, unsigned int group_id, const char* username) {
-    for (int i = 0; i < 10; i++) {
-        if (groups[i].group_id == group_id) {
-            for (int j = 0; j < groups[i].member_count; j++) {
-                if (strcmp(groups[i].members[j], username) == 0) {
+int remove_member_from_group(Group *groups, unsigned int group_id, const char *username)
+{
+    for (int i = 0; i < 10; i++)
+    {
+        if (groups[i].group_id == group_id)
+        {
+            for (int j = 0; j < groups[i].member_count; j++)
+            {
+                if (strcmp(groups[i].members[j], username) == 0)
+                {
                     // 找到成员并将其移除
-                    for (int k = j; k < groups[i].member_count - 1; k++) {
+                    for (int k = j; k < groups[i].member_count - 1; k++)
+                    {
                         strcpy(groups[i].members[k], groups[i].members[k + 1]);
                     }
                     groups[i].member_count--;
-                    return 1;  // 成员移除成功
+                    return 1; // 成员移除成功
                 }
             }
-            return 0;  // 成员未找到
+            return 0; // 成员未找到
         }
     }
-    return 0;  // 找不到指定的群组
+    return 0; // 找不到指定的群组
 }
 
 // 添加新群组
-int add_group(Group *groups, unsigned int group_id, const char* group_name) {
+int add_group(Group *groups, unsigned int group_id, const char *group_name)
+{
     // 检查是否已经有10个群组
-    for (int i = 0; i < 10; i++) {
-        if (groups[i].group_id == 0) {  // 0 表示空的群组
+    for (int i = 0; i < 10; i++)
+    {
+        if (groups[i].group_id == 0)
+        { // 0 表示空的群组
             groups[i].group_id = group_id;
             strncpy(groups[i].group_name, group_name, sizeof(groups[i].group_name) - 1);
-            groups[i].group_name[sizeof(groups[i].group_name) - 1] = '\0';  // 确保字符串结尾
+            groups[i].group_name[sizeof(groups[i].group_name) - 1] = '\0'; // 确保字符串结尾
             groups[i].member_count = 0;
-            return 1;  // 群组创建成功
+            return 1; // 群组创建成功
         }
     }
-    return 0;  // 群组已满，无法创建新群组
+    return 0; // 群组已满，无法创建新群组
 }
 
 // 删除群组
-int dissolve_group(Group *groups, unsigned int group_id) {
-    for (int i = 0; i < 10; i++) {
-        if (groups[i].group_id == group_id) {
-            groups[i].group_id = 0;  // 通过设置 group_id 为 0 来标记群组已解散
+int dissolve_group(Group *groups, unsigned int group_id)
+{
+    for (int i = 0; i < 10; i++)
+    {
+        if (groups[i].group_id == group_id)
+        {
+            groups[i].group_id = 0; // 通过设置 group_id 为 0 来标记群组已解散
             groups[i].member_count = 0;
-            return 1;  // 群组解散成功
+            return 1; // 群组解散成功
         }
     }
-    return 0;  // 找不到指定的群组
+    return 0; // 找不到指定的群组
 }
 void print_groups(Group *groups, MYSQL *conn)
 {
@@ -339,7 +382,7 @@ void print_groups(Group *groups, MYSQL *conn)
              "FROM groups g JOIN group_members gm ON g.id = gm.group_id "
              "JOIN users u ON gm.user_id = u.id "
              "ORDER BY g.id, gm.user_id;");
-    
+
     // 执行查询
     result = mysql_query(conn, query) == 0 ? mysql_store_result(conn) : NULL;
     if (!result)
@@ -364,7 +407,7 @@ void print_groups(Group *groups, MYSQL *conn)
             groups[group_index].group_id = current_group_id;
             strncpy(groups[group_index].group_name, row[1], sizeof(groups[group_index].group_name) - 1);
             groups[group_index].group_name[sizeof(groups[group_index].group_name) - 1] = '\0'; // 确保字符串结尾
-            groups[group_index].member_count = 0; // 初始化成员计数
+            groups[group_index].member_count = 0;                                              // 初始化成员计数
         }
 
         // 添加成员到当前群组
@@ -380,11 +423,11 @@ void print_groups(Group *groups, MYSQL *conn)
     // 打印群组信息
     for (int i = 0; i <= group_index; i++)
     {
-        printf("Group ID: %u, Group Name: %s, Members (%d):\n", 
-               groups[i].group_id, 
-               groups[i].group_name, 
+        printf("Group ID: %u, Group Name: %s, Members (%d):\n",
+               groups[i].group_id,
+               groups[i].group_name,
                groups[i].member_count);
-        
+
         for (int j = 0; j < groups[i].member_count; j++)
         {
             printf("  - %s\n", groups[i].members[j]);
@@ -394,4 +437,3 @@ void print_groups(Group *groups, MYSQL *conn)
     // 释放查询结果
     mysql_free_result(result);
 }
-    

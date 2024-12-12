@@ -78,6 +78,7 @@ extern int session_table_index;
 extern ClientEventQueueMap clientfd_queues_map[MAX_CLIENTS];//存储客户端事件队列与描述符号的映射
 extern pthread_mutex_t client_queues_lock ;
 extern int map_index ;
+extern char online_members[MAX_MEMBERS][MAX_USERNAME_LENGTH];
 // 请求码定义
 #define REQUEST_LOGIN 10001
 #define RESPONSE_LOGIN 10021
@@ -313,7 +314,7 @@ int find_group_id(char *groupname ,MYSQL *conn);
 void handle_add_group(int client_fd, char *buffer, MYSQL *conn);
 void group_message(int client_fd, char *buffer, MYSQL *conn);
 int get_groupnum(MYSQL*conn);
-
+void online_groupmembers(Group *groups, int group_id, char (*members)[MAX_USERNAME_LENGTH]);
 
 
 

@@ -8,13 +8,13 @@ __thread int online_friend_count = 0;
 __thread struct session_name client_session;
 
 EventQueue *queue = NULL;
-
+char online_members[MAX_MEMBERS][MAX_USERNAME_LENGTH] = {0};
 // 请求处理函数
 void *handle_client(void *arg)
 {
     pthread_t main_thread = pthread_self();
     pthread_t *queue_pthread = (pthread_t *)malloc(sizeof(pthread_t));
-    printf("当前主线程：%lu\n", main_thread);
+
     queue = init_event_queue();
 
     int client_fd = *(int *)arg;
@@ -57,19 +57,7 @@ void *handle_client(void *arg)
         }
         req_length = ntohl(*(unsigned int *)buffer);
 
-        if (recv_full(client_fd, buffer + size_len, req_length - size_len) <= 0) // 接收剩余的数据
-        {
-            if (errno == EWOULDBLOCK || errno == EAGAIN)
-            {
-                printf("客户端 10 秒未发送请求，下线处理。\n");
-                delete_session(client_session.session);
-            }
-            else
-            {
-                printf("接收剩余数据失败或客户端断开！\n");
-            }
-            break;
-        }
+        recv_full(client_fd, buffer + size_len, req_length - size_len);// 接收剩余的数据
 
         // 解析请求类型
         unsigned int request_code = ntohl(*(unsigned int *)(buffer + size_len));
@@ -110,7 +98,7 @@ void *handle_client(void *arg)
             clietn_exit(queue_pthread);
             break;
         case REQUEST_GROUP_MESSAGE:
-            clietn_exit(queue_pthread);
+            group_message(client_fd,buffer,conn);
             break;
         default:
             printf("未知的请求代码: %u\n", request_code);
@@ -193,7 +181,7 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pth
     printf("客户端：%s登录时在线好友数量%d\n", client_session.username, online_friend_count);
 
     pthread_t event_thread;
-    printf("事件队列线程：%lu", event_thread);
+
     event_pthread_arg *event_arg = (event_pthread_arg *)malloc(sizeof(event_pthread_arg));
     event_arg->online_friends = online_friends;
     event_arg->queue = queue;

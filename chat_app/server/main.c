@@ -6,6 +6,7 @@ ClientEventQueueMap clientfd_queues_map[MAX_CLIENTS];
 int map_index = 0;
 pthread_mutex_t client_queues_lock =PTHREAD_MUTEX_INITIALIZER;
 Group  groups[10]={0};
+
 int main()
 {
     // 初始化

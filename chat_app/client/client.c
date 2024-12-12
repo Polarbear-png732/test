@@ -92,7 +92,7 @@ void *send_request(void *arg)
             exit_client();
             break;
         case 10:
-            build_group_message();
+            request=build_group_message();
             len = sizeof(InviteRequest);
             break;
         default:
@@ -333,15 +333,31 @@ HandleGroupInvite *build_handle_group_request()
 GroupMessage *build_group_message()
 {
     GroupMessage *request = malloc(sizeof(GroupMessage));
-    printf("请输入群聊id：\n");
-    scanf("%u", &request->group_id);
-    printf("请输入消息：\n");
-    scanf("%s", request->message);
+    if (!request)
+    {
+        perror("内存分配失败");
+        exit(1);
+    }
+    request->request_code = htonl(REQUEST_GROUP_MESSAGE);
 
-    request->group_id = htonl(request->group_id);
+    printf("请输入群聊 ID：\n");
+    unsigned int group_id;
+    scanf("%u", &group_id);
+    request->group_id = htonl(group_id);
+
+    printf("请输入消息内容：\n");
+    getchar(); // 清除换行符
+    fgets(request->message, sizeof(request->message), stdin);
+    // 移除 fgets 读取的换行符
+    size_t len = strlen(request->message);
+    if (len > 0 && request->message[len - 1] == '\n')
+    {
+        request->message[len - 1] = '\0';
+    }
+
     strncpy(request->session_token, session_token, TOKEN_LEN - 1);
     request->session_token[TOKEN_LEN - 1] = '\0';
-    request->request_code = htonl(REQUEST_GROUP_MESSAGE);
+
     request->length = htonl(sizeof(GroupMessage));
     return request;
 }
