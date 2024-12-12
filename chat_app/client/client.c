@@ -93,7 +93,7 @@ void *send_request(void *arg)
             break;
         case 10:
             request=build_group_message();
-            len = sizeof(InviteRequest);
+            len = sizeof(GroupMessage);
             break;
         default:
             printf("无效的操作\n");
@@ -103,6 +103,7 @@ void *send_request(void *arg)
         if (request != NULL)
         {
             pthread_mutex_lock(&lock);
+            printf("Sending request: length=%u, request_code=%u\n", ntohl(*(unsigned int *)request), ntohl(*(unsigned int *)(request + sizeof(unsigned int))));
             send(client_fd, request, len, 0);
             pthread_mutex_unlock(&lock);
             free(request); // 释放动态分配的内存
@@ -333,11 +334,7 @@ HandleGroupInvite *build_handle_group_request()
 GroupMessage *build_group_message()
 {
     GroupMessage *request = malloc(sizeof(GroupMessage));
-    if (!request)
-    {
-        perror("内存分配失败");
-        exit(1);
-    }
+
     request->request_code = htonl(REQUEST_GROUP_MESSAGE);
 
     printf("请输入群聊 ID：\n");
@@ -346,14 +343,7 @@ GroupMessage *build_group_message()
     request->group_id = htonl(group_id);
 
     printf("请输入消息内容：\n");
-    getchar(); // 清除换行符
-    fgets(request->message, sizeof(request->message), stdin);
-    // 移除 fgets 读取的换行符
-    size_t len = strlen(request->message);
-    if (len > 0 && request->message[len - 1] == '\n')
-    {
-        request->message[len - 1] = '\0';
-    }
+    scanf("%s",request->message);
 
     strncpy(request->session_token, session_token, TOKEN_LEN - 1);
     request->session_token[TOKEN_LEN - 1] = '\0';

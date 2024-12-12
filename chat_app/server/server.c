@@ -20,7 +20,6 @@ void *handle_client(void *arg)
     int client_fd = *(int *)arg;
     char buffer[1024];
     MYSQL *conn = db_connect();
-    print_groups(groups, conn);
     if (!conn)
     {
         printf("数据库连接失败！\n");
@@ -29,7 +28,7 @@ void *handle_client(void *arg)
     }
     get_groupmember(groups, conn);
     unsigned int req_length;
-    unsigned int size_len = sizeof(req_length);
+    unsigned int size_len = sizeof(unsigned int);
 
     // 设置接收超时时间为 10 秒
     struct timeval timeout;
@@ -40,7 +39,6 @@ void *handle_client(void *arg)
     printf("client connection!\n");
     while (1)
     {
-
         if (recv_full(client_fd, buffer, size_len) <= 0) // 接收报文长度
         {
             if (errno == EWOULDBLOCK || errno == EAGAIN)
@@ -55,10 +53,20 @@ void *handle_client(void *arg)
             }
             break;
         }
+        else
+        {
+            printf("Received length field: %u bytes\n", ntohl(*(unsigned int *)buffer));
+        }
         req_length = ntohl(*(unsigned int *)buffer);
 
-        recv_full(client_fd, buffer + size_len, req_length - size_len);// 接收剩余的数据
-
+        if (recv_full(client_fd, buffer + size_len, req_length - size_len) > 0) // 接收剩余的数据
+        {
+            printf("Received full message of %u bytes\n", req_length);
+        }
+        else
+        {
+            printf("Failed to receive full message\n");
+        }
         // 解析请求类型
         unsigned int request_code = ntohl(*(unsigned int *)(buffer + size_len));
         switch (request_code)
@@ -98,7 +106,7 @@ void *handle_client(void *arg)
             clietn_exit(queue_pthread);
             break;
         case REQUEST_GROUP_MESSAGE:
-            group_message(client_fd,buffer,conn);
+            group_message(client_fd, buffer, conn);
             break;
         default:
             printf("未知的请求代码: %u\n", request_code);

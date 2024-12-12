@@ -157,7 +157,7 @@ void handle_add_group(int client_fd, char *buffer, MYSQL *conn)
         do_query(query, conn);
     }
 }
-
+//从数据库中查询某个群的id
 int find_group_id(char *groupname, MYSQL *conn)
 {
     char query[512];
@@ -172,7 +172,7 @@ int find_group_id(char *groupname, MYSQL *conn)
     mysql_free_result(result);
     return group_id;
 }
-
+//处理发送群聊消息的请求
 void group_message(int client_fd, char *buffer, MYSQL *conn)
 {
     char query[512];
