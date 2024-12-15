@@ -28,6 +28,9 @@
 
 #define REQUEST_PRIVATE_MESSAGE 10008
 #define REQUEST_FILE_TRANSFER 10009
+#define RESPONSE_FILE_TRANSFER 10016
+#define RESPONSE_FILE_ACK 10017
+
 #define REQUEST_CREATEUSER 10010
 #define REQUEST_POLLING 10012
 
@@ -38,6 +41,7 @@
 
 #define CLIENT_EXIT 10000
 
+#define BUFSIZE 4096
 #define TOKEN_LEN 64
 #define MAX_USERNAME_LENGTH 32
 typedef struct
@@ -174,17 +178,18 @@ typedef struct
 {
     unsigned int length;
     unsigned int request_code; // 请求码
-    char session_token[64];
+    unsigned int file_size;
     char receiver_username[32];
+    char session_token[64];
     char file_name[128];
-    unsigned int file_size; // 文件大小（字节）
 } FileTransferRequest;
+
 
 typedef struct
 {
     unsigned int length;
-    unsigned int status_code; // 200=接收成功, 403=拒绝, 500=失败
-    char transfer_token[64];  // 用于后续传输
+    unsigned int request_code;  //ack
+    unsigned int block_number;  //分块编号
 } FileTransferResponse;
 
 typedef struct
@@ -212,6 +217,10 @@ GroupCreateRequest *build_group_request();
 InviteRequest *build_invite_request();
 HandleGroupInvite *build_handle_group_request();
 GroupMessage *build_group_message();
+FileTransferRequest *build_file_transfer_req();
+
+long get_file_size(const char *filename);
+void file_transfer(char *buffer);
 void exit_client();
 
 #endif // CLIENT_H

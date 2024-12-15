@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -g -pthread
 LIBS = -lmysqlclient
 
-SRCS = main.c init.c server.c event_queue.c group_manage.c friend_manage.c
+SRCS = main.c init.c server.c event_queue.c group_manage.c friend_manage.c file_transfer.c
 OBJS = $(SRCS:.c=.o)
 
 TARGET =server
@@ -16,5 +16,5 @@ $(TARGET): $(OBJS)
 	$(CC) -c $(CFLAGS) $<
 
 clean:
-	rm -f $(OBJS)
+	rm -f $(OBJS) TARGET
 

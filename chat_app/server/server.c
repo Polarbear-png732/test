@@ -18,7 +18,7 @@ void *handle_client(void *arg)
     queue = init_event_queue();
 
     int client_fd = *(int *)arg;
-    char buffer[1024];
+    char buffer[BUFSIZE];
     MYSQL *conn = db_connect();
     if (!conn)
     {
@@ -107,6 +107,9 @@ void *handle_client(void *arg)
             break;
         case REQUEST_GROUP_MESSAGE:
             group_message(client_fd, buffer, conn);
+            break;
+        case REQUEST_FILE_TRANSFER:
+            file_recv(client_fd, buffer, conn);
             break;
         default:
             printf("未知的请求代码: %u\n", request_code);

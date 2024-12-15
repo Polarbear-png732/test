@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -pthread
+CFLAGS = -O0 -g -pthread
 TARGET = client
 SRC = client.c
 

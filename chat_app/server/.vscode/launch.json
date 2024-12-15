@@ -2,11 +2,11 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Chat Server",
+      "name": "Debug Client",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/server", // 可执行文件路径
-      "args": [], // 如有需要，可填入启动时的命令行参数
+      "program": "${workspaceFolder}/server",
+      "args": [], // 如果运行时需要参数，可以在这里填写
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
       "environment": [],
@@ -19,7 +19,7 @@
           "ignoreFailures": true
         }
       ],
-      "preLaunchTask": "Build with Makefile" // 调试前自动构建项目
+      "preLaunchTask": "Build with Makefile" // 在调试前自动构建
     }
   ]
 }

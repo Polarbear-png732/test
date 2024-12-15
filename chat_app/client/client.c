@@ -7,6 +7,7 @@ int client_fd;                                    // 客户端套接字
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; // 互斥锁
 char session_token[64];                           // 会话标识符
 Polling polling;
+char file_name[256];
 int main()
 {
     // 初始化客户端
@@ -45,7 +46,7 @@ void *send_request(void *arg)
 {
 
     int action;
-    printf("1.登录 2.创建用户3.添加好友或删除4.处理好友请求\n5.发送私聊消息6.创建群或者删除7.邀请好友入群或者踢人\n8.处理群聊邀请.9.退出10.发送群聊消息");
+    printf("1.登录 2.创建用户3.添加好友或删除4.处理好友请求\n5.发送私聊消息6.创建群或者删除7.邀请好友入群或者踢人\n8.处理群聊邀请.9.退出10.发送群聊消息11发送文件给好友\n");
     pthread_detach(pthread_self());
     while (1)
     {
@@ -92,8 +93,12 @@ void *send_request(void *arg)
             exit_client();
             break;
         case 10:
-            request=build_group_message();
+            request = build_group_message();
             len = sizeof(GroupMessage);
+            break;
+        case 11:
+            request = build_file_transfer_req();
+            len = sizeof(FileTransferRequest);
             break;
         default:
             printf("无效的操作\n");
@@ -115,7 +120,7 @@ void *send_request(void *arg)
 void *receive_response(void *arg)
 {
 
-    char buffer[2048];
+    char buffer[BUFSIZE];
     unsigned int req_length;
     unsigned int size_len = sizeof(req_length);
     while (1)
@@ -144,6 +149,12 @@ void *receive_response(void *arg)
         {
             SimpleResponse *resp = (SimpleResponse *)buffer;
             printf("Server Response: %u\n", ntohl(resp->status_code));
+            break;
+        }
+        case RESPONSE_FILE_ACK:
+        {
+            printf("第%u块，确认开始传输\n",*(unsigned*)(buffer+8)); // 检查是否进入该 case
+            file_transfer(buffer);
             break;
         }
         default:
@@ -343,12 +354,35 @@ GroupMessage *build_group_message()
     request->group_id = htonl(group_id);
 
     printf("请输入消息内容：\n");
-    scanf("%s",request->message);
+    scanf("%s", request->message);
 
     strncpy(request->session_token, session_token, TOKEN_LEN - 1);
     request->session_token[TOKEN_LEN - 1] = '\0';
 
     request->length = htonl(sizeof(GroupMessage));
+    return request;
+}
+
+FileTransferRequest *build_file_transfer_req()
+{
+
+    FileTransferRequest *request = malloc(sizeof(FileTransferRequest));
+
+    request->request_code = htonl(REQUEST_FILE_TRANSFER);
+
+    request->length = htonl(sizeof(FileTransferRequest));
+
+    printf("请输入好友名称： \n");
+    scanf("%s", request->receiver_username);
+
+    printf("请输入文件名称（绝对路径）：\n");
+    scanf("%s", request->file_name);
+    strcpy(file_name, request->file_name);
+    long file_size = get_file_size(request->file_name);
+    request->file_size = htonl((unsigned int *)file_size);
+
+    strncpy(request->session_token, session_token, TOKEN_LEN - 1);
+    request->session_token[TOKEN_LEN - 1] = '\0';
     return request;
 }
 // 初始化客户端
@@ -412,6 +446,55 @@ int recv_full(int sock, void *buf, size_t len)
     return 1; // 成功接收完整数据
 }
 
+long get_file_size(const char *filename)
+{
+    FILE *file = fopen(filename, "rb"); // 以二进制只读模式打开文件
+    if (!file)
+    {
+        perror("Error opening file");
+        return -1;
+    }
+    fseek(file, 0, SEEK_END);     // 移动文件指针到文件末尾
+    long file_size = ftell(file); // 获取当前文件指针的位置，即文件大小
+    fclose(file);                 // 关闭文件
+    return file_size;
+}
+
+void file_transfer(char *buffer)
+{
+    long file_size = get_file_size(file_name);
+    float num = (float)file_size / (BUFSIZE - 12);
+    printf("文件大小：%ld,分为% .2f次传输\n", file_size, num);
+    FILE *file = fopen(file_name, "rb");
+    int block_number = 1;
+
+    while (1)
+    {
+        FileTransferResponse *ack = (FileTransferResponse *)buffer;
+        ack->block_number = htonl(block_number);
+        ack->request_code = htonl(RESPONSE_FILE_ACK);
+        ack->length = htonl(12);
+        size_t bytes_read;
+        bytes_read = fread(buffer + 12, 1, BUFSIZE - 12, file);
+        pthread_mutex_lock(&lock);
+
+        ssize_t sent;
+        sent=send(client_fd, buffer, bytes_read + 12, 0);
+
+        printf("sent:%ld\n",sent);
+
+        recv(client_fd, ack, 12, 0);
+        printf("第%u块已经确认\n", ntohl(ack->block_number));
+        pthread_mutex_unlock(&lock);
+        block_number++;
+        if (feof(file))
+        {
+            printf("End of file reached.\n");
+            break;
+        }
+    }
+    fclose(file);
+}
 /*
 void send_polling(void *arg)
 {
