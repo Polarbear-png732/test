@@ -207,6 +207,9 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pth
     group_invite_push(client_fd, conn);
     offline_message_push(user_id, conn);
     on_off_push(1, friends);
+
+    //推送离线文件
+    offline_file_push(client_fd,buffer,conn);
 }
 
 // 数据库连接函数

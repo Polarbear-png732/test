@@ -153,8 +153,14 @@ void *receive_response(void *arg)
         }
         case RESPONSE_FILE_ACK:
         {
-            printf("第%u块，确认开始传输\n",*(unsigned*)(buffer+8)); // 检查是否进入该 case
+            printf("第%u块，确认开始传输\n", *(unsigned *)(buffer + 8)); // 检查是否进入该 case
             file_transfer(buffer);
+            break;
+        }
+        case REQUEST_FILE_TRANSFER:
+        {
+            printf("开始接收文件！ \n");
+            file_recv(buffer);
             break;
         }
         default:
@@ -379,10 +385,21 @@ FileTransferRequest *build_file_transfer_req()
     scanf("%s", request->file_name);
     strcpy(file_name, request->file_name);
     long file_size = get_file_size(request->file_name);
-    request->file_size = htonl((unsigned int *)file_size);
+    request->file_size = htonl((unsigned int)file_size);
+    char *filename;
+    // 使用 strrchr 找到最后一个斜杠的位置
+    filename = strrchr(request->file_name, '/');
+
+    if (filename)
+    {
+        // 跳过斜杠，指向文件名
+        filename++;
+        strcpy(request->file_name, filename);
+    } // 如果没有找到斜杠，整个路径就是文件名
 
     strncpy(request->session_token, session_token, TOKEN_LEN - 1);
     request->session_token[TOKEN_LEN - 1] = '\0';
+    printf("%s\n", request->file_name);
     return request;
 }
 // 初始化客户端
@@ -479,9 +496,9 @@ void file_transfer(char *buffer)
         pthread_mutex_lock(&lock);
 
         ssize_t sent;
-        sent=send(client_fd, buffer, bytes_read + 12, 0);
+        sent = send(client_fd, buffer, bytes_read + 12, 0);
 
-        printf("sent:%ld\n",sent);
+        printf("sent:%ld\n", sent);
 
         recv(client_fd, ack, 12, 0);
         printf("第%u块已经确认\n", ntohl(ack->block_number));
@@ -495,20 +512,42 @@ void file_transfer(char *buffer)
     }
     fclose(file);
 }
-/*
-void send_polling(void *arg)
-{
 
-    polling.length = htonl(sizeof(polling));
-    polling.request_code = htonl(REQUEST_POLLING);
-    strncpy(&polling.token, session_token, sizeof(session_token) - 1);
-    polling.token[sizeof(session_token) - 1] = '\0';
+void file_recv(char *buffer)
+{
+    FileTransferRequest *req = (FileTransferRequest *)buffer;
+    unsigned int file_size = ntohl(req->file_size);
+    char filename[256];
+    strcpy(filename, req->file_name);
+
+    FILE *file = fopen(filename, "wb");
+    FileTransferResponse *ack = (FileTransferResponse *)buffer;
+
+    ack->block_number = 0;
+    ack->length = htonl(12);
+    ack->request_code = htonl(RESPONSE_FILE_ACK); // 发送确认之后开始传文件
+    send(client_fd, ack, 12, 0);
+
+    int total_write = 0;
     while (1)
     {
-        pthread_mutex_lock(&lock);
-        send(client_fd, &polling, sizeof(polling), 0);
-        pthread_mutex_unlock(&lock);
-        sleep(5);
+        ssize_t bytes_recv = recv(client_fd, buffer, BUFSIZE, 0);
+
+        size_t bytes_write;
+        bytes_write = fwrite(buffer + 12, 1, bytes_recv - 12, file);
+        total_write += bytes_write;
+        printf("total_write%d\n", total_write);
+        if (bytes_write == bytes_recv - 12)
+        { // 写入成功，发送ack，开始下一轮接收
+            ack->block_number = *(unsigned int *)(buffer + 8);
+            printf("第%u块接收完成\n", ntohl(ack->block_number));
+            send(client_fd, ack, 12, 0);
+        }
+        if (total_write == file_size)
+        {
+            printf("接收完毕\n");
+            break;
+        }
     }
+    fclose(file);
 }
-*/

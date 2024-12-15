@@ -252,6 +252,10 @@ typedef struct
     unsigned int request_code;  //ack
     unsigned int block_number;  //分块编号
 } FileTransferResponse;
+    typedef struct {
+    int num_files;
+    char **offline_file;
+} OfflineFileData;
 
 typedef struct
 {
@@ -345,7 +349,12 @@ int add_group(Group *groups, unsigned int group_id, const char *group_name);
 int dissolve_group(Group *groups, unsigned int group_id);
 void print_groups(Group *groups, MYSQL *conn);
 
-//void file_transfer(client_fd, buffer, conn);
+void offline_file_push(int client_fd, char *buffer, MYSQL *conn);
+void file_transfer(int client_fd, char *filename, char *buffer);
 void file_recv(int client_fd, char *buffer, MYSQL *conn);
 void clietn_exit(pthread_t *event_pthread);
+OfflineFileData *offline_file_query(int recver_id, MYSQL* conn);
+long get_file_size(const char *filename);
+void free_offline_file(OfflineFileData *data);
+void filetransfer_req(int client_fd,char *filename);
 #endif

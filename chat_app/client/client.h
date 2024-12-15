@@ -220,6 +220,7 @@ GroupMessage *build_group_message();
 FileTransferRequest *build_file_transfer_req();
 
 long get_file_size(const char *filename);
+void file_recv(char *buffer);
 void file_transfer(char *buffer);
 void exit_client();
 
