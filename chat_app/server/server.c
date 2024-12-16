@@ -656,3 +656,4 @@ void clietn_exit(pthread_t *event_pthread)
     pthread_cancel(*event_pthread);
     pthread_cancel(pthread_self());
 }
+

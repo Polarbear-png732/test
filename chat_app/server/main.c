@@ -4,13 +4,14 @@ struct session_name session_table[10];
 int session_table_index = 0;
 ClientEventQueueMap clientfd_queues_map[MAX_CLIENTS];
 int map_index = 0;
-pthread_mutex_t client_queues_lock =PTHREAD_MUTEX_INITIALIZER;
-Group  groups[10]={0};
-
+pthread_mutex_t client_queues_lock = PTHREAD_MUTEX_INITIALIZER;
+Group groups[10] = {0};
+int file_sock;
 int main()
 {
     // 初始化
     int server_fd = init_server();
+    file_sock = init_file_transfer_server();
     printf("Server started, waiting for connections...\n");
     init_client_queues();
 

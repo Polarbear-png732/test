@@ -2,8 +2,9 @@
 
 #define SERVER_IP "127.0.0.1" // 服务器IP地址
 #define SERVER_PORT 10005     // 服务器端口
-
-int client_fd;                                    // 客户端套接字
+#define FILE_TRANSFER_SERVER_PORT 10007
+int client_fd;
+int file_sock;                                    // 客户端套接字
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; // 互斥锁
 char session_token[64];                           // 会话标识符
 Polling polling;
@@ -12,6 +13,7 @@ int main()
 {
     // 初始化客户端
     init_client();
+    file_sock_init();
     pthread_t send_thread, receive_thread, polling_pthread;
     // 创建线程发送请求
     if (pthread_create(&send_thread, NULL, send_request, NULL) != 0)
@@ -160,7 +162,7 @@ void *receive_response(void *arg)
         case REQUEST_FILE_TRANSFER:
         {
             printf("开始接收文件！ \n");
-            file_recv(buffer);
+            file_recv(buffer,file_sock);
             break;
         }
         default:
@@ -407,7 +409,7 @@ void init_client()
 {
     struct sockaddr_in server_addr;
 
-    // 创建套接字
+    // 创建主套接字
     client_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (client_fd < 0)
     {
@@ -426,10 +428,31 @@ void init_client()
         close(client_fd);
         exit(1);
     }
-
-    printf("成功连接到服务器 %s:%d\n", SERVER_IP, SERVER_PORT);
 }
 
+void file_sock_init()
+{
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(FILE_TRANSFER_SERVER_PORT);
+    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
+
+    // 创建文件传输套接字
+    file_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (file_sock < 0)
+    {
+        perror("创建文件传输套接字失败");
+        exit(1);
+    }
+
+    // 连接文件传输服务器
+    if (connect(file_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+    {
+        perror("连接文件传输服务器失败");
+        close(file_sock);
+        exit(1);
+    }
+}
 int recv_full(int sock, void *buf, size_t len)
 {
 
@@ -513,7 +536,7 @@ void file_transfer(char *buffer)
     fclose(file);
 }
 
-void file_recv(char *buffer)
+void file_recv(char *buffer,int file_sock)
 {
     FileTransferRequest *req = (FileTransferRequest *)buffer;
     unsigned int file_size = ntohl(req->file_size);
@@ -521,29 +544,31 @@ void file_recv(char *buffer)
     strcpy(filename, req->file_name);
 
     FILE *file = fopen(filename, "wb");
-    FileTransferResponse *ack = (FileTransferResponse *)buffer;
 
-    ack->block_number = 0;
+    char buf[BUFSIZE];
+    FileTransferResponse *ack = (FileTransferResponse *)buf;
+
+    ack->block_number =htonl(0);
     ack->length = htonl(12);
     ack->request_code = htonl(RESPONSE_FILE_ACK); // 发送确认之后开始传文件
-    send(client_fd, ack, 12, 0);
+    send(file_sock, ack, 12, 0);
 
     int total_write = 0;
     while (1)
     {
-        ssize_t bytes_recv = recv(client_fd, buffer, BUFSIZE, 0);
+        ssize_t bytes_recv = recv(file_sock, buf, BUFSIZE, 0);
 
         size_t bytes_write;
-        bytes_write = fwrite(buffer + 12, 1, bytes_recv - 12, file);
+        bytes_write = fwrite(buf + 12, 1, bytes_recv - 12, file);
         total_write += bytes_write;
         printf("total_write%d\n", total_write);
         if (bytes_write == bytes_recv - 12)
         { // 写入成功，发送ack，开始下一轮接收
-            ack->block_number = *(unsigned int *)(buffer + 8);
+            ack->block_number = *(unsigned int *)(buf + 8);
             printf("第%u块接收完成\n", ntohl(ack->block_number));
-            send(client_fd, ack, 12, 0);
+            send(file_sock, ack, 12, 0);
         }
-        if (total_write == file_size)
+        if (total_write >= file_size)
         {
             printf("接收完毕\n");
             break;

@@ -29,17 +29,29 @@ void file_transfer(int client_fd, char *filename, char *buffer)
     printf("文件名：%s\n", filename);
     FILE *file = fopen(filename, "rb");
     int block_number = 1;
-    FileTransferResponse *ack = (FileTransferResponse *)buffer;
+
+    char buf[BUFSIZE];
+    FileTransferResponse *ack = (FileTransferResponse *)buf;
+
+    recv(client_fd, ack, 12, 0);
+    printf("  块编号：%u,请求码：%u,len:%u\n", ntohl(ack->block_number), ntohl(ack->request_code), ntohl(ack->length));
     ack->request_code = htonl(RESPONSE_FILE_ACK);
     ack->length = htonl(12);
-    recv(client_fd, ack, 12, 0);
     while (1)
     {
         ack->block_number = htonl(block_number);
         size_t bytes_read;
-        bytes_read = fread(buffer + 12, 1, BUFSIZE - 12, file);
+        bytes_read = fread(buf + 12, 1, BUFSIZE - 12, file);
         ssize_t sent;
-        sent = send(client_fd, buffer, bytes_read + 12, 0);
+        sent = send(client_fd, buf, bytes_read + 12, 0);
+        if (sent <= 0)
+        {
+            // 如果发送失败，打印详细的错误信息
+            perror("Send error");
+            printf("Error code: %d\n", errno);
+            printf("Error description: %s\n", strerror(errno));
+        }
+
         printf("sent:%lu\n", sent);
         recv(client_fd, ack, 12, 0);
         printf("第%u块\n", ntohl(ack->block_number));
@@ -63,10 +75,30 @@ void file_recv(int client_fd, char *buffer, MYSQL *conn)
     char session[64];
     strcpy(session, req->session_token);
     snprintf(filename, sizeof(filename), "../server_file/%s", req->file_name);
-    strcpy(recver, req->receiver_username); // buffer 后续用于传文件，先存有用的信息
+    strcpy(recver, req->receiver_username); // 先存有用的信息, 传文件给另一个客户端用专门的缓冲区
 
+    // 检查套接字是否可写
+    fd_set writefds;
+    struct timeval timeout;
+    FD_ZERO(&writefds);
+    FD_SET(client_fd, &writefds);
+    timeout.tv_sec = 10; // 设置超时时间
+    timeout.tv_usec = 0;
+    int retval = select(client_fd + 1, NULL, &writefds, NULL, &timeout);
+    if (retval == -1)
+    {
+        perror("select failed");
+        return;
+    }
+    else if (retval == 0)
+    {
+        printf("套接字不可写，连接可能已关闭\n");
+        return;
+    }
+    char buf[BUFSIZE];
     FILE *file = fopen(filename, "wb");
-    FileTransferResponse *ack = (FileTransferResponse *)buffer;
+
+    FileTransferResponse *ack = (FileTransferResponse *)buf;
 
     ack->block_number = 0;
     ack->length = htonl(12);
@@ -76,19 +108,19 @@ void file_recv(int client_fd, char *buffer, MYSQL *conn)
     int total_write = 0;
     while (1)
     {
-        ssize_t bytes_recv = recv(client_fd, buffer, BUFSIZE, 0);
+        ssize_t bytes_recv = recv(client_fd, buf, BUFSIZE, 0);
 
         size_t bytes_write;
-        bytes_write = fwrite(buffer + 12, 1, bytes_recv - 12, file);
+        bytes_write = fwrite(buf + 12, 1, bytes_recv - 12, file);
         total_write += bytes_write;
         printf("total_write%d\n", total_write);
         if (bytes_write == bytes_recv - 12)
         { // 写入成功，发送ack，开始下一轮接收
-            ack->block_number = *(unsigned int *)(buffer + 8);
+            ack->block_number = *(unsigned int *)(buf + 8);
             printf("第%u块接收完成\n", ntohl(ack->block_number));
             send(client_fd, ack, 12, 0);
         }
-        if (total_write == file_size)
+        if (total_write >= file_size)
         {
             printf("接收完毕\n");
             break;
@@ -111,10 +143,16 @@ void file_recv(int client_fd, char *buffer, MYSQL *conn)
     else
     {
         int index = find_session_index(1, recver);
-        pthread_mutex_lock(&client_queues_lock);
+
+        struct sockaddr_in client_addr;
+        socklen_t client_len = sizeof(client_addr);
+        int client_file_fd = accept(file_sock, (struct sockaddr *)&client_addr, &client_len);
+
         filetransfer_req(session_table[index].client_fd, filename);
-        file_transfer(session_table[index].client_fd, filename, buffer);
+        pthread_mutex_lock(&client_queues_lock);
+        file_transfer(client_file_fd, filename, buf); // 发送给客户端的文件通过专门多套接字处理
         pthread_mutex_unlock(&client_queues_lock);
+        close(client_file_fd);
     }
 }
 

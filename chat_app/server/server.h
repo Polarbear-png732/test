@@ -12,6 +12,7 @@
 #include <pthread.h>
 
 #define PORT 10005
+#define FILE_TRANSFER_PORT 10007
 #define MAX_CLIENT 100
 #define TOKEN_LEN 64
 #define MAX_FRIENDS 10
@@ -81,6 +82,8 @@ extern ClientEventQueueMap clientfd_queues_map[MAX_CLIENTS]; // 存储客户端�
 extern pthread_mutex_t client_queues_lock;
 extern int map_index;
 extern char online_members[MAX_MEMBERS][MAX_USERNAME_LENGTH];
+extern int file_sock;
+
 // 请求码定义
 #define REQUEST_LOGIN 10001
 #define RESPONSE_LOGIN 10021
@@ -308,7 +311,7 @@ int find_uid(char *token);
 void private_message(int client, char *buffer, MYSQL *conn);
 
 MYSQL_RES *qurey(char *query, MYSQL *conn); // 执行一个查询语句，返回结果集合
-
+int init_file_transfer_server() ;
 int find_id_mysql(char *name, MYSQL *conn); // 获取离线用户的id
 char **get_online_friends(char **friends, int *friend_count, int *online_friend_count);
 
