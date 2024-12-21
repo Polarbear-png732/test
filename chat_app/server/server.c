@@ -27,6 +27,7 @@ void *handle_client(void *arg)
         return NULL;
     }
     get_groupmember(groups, conn);
+    print_groups(groups,conn);
     unsigned int req_length;
     unsigned int size_len = sizeof(unsigned int);
 
@@ -37,6 +38,7 @@ void *handle_client(void *arg)
     setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
 
     printf("client connection!\n");
+    
     while (1)
     {
         if (recv_full(client_fd, buffer, size_len) <= 0) // 接收报文长度
@@ -203,8 +205,10 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pth
     pthread_create(&event_thread, NULL, process_events, (void *)event_arg);
     *queue_pthread = event_thread;
 
+
     // 上线时推送消息
     group_invite_push(client_fd, conn);
+    users_group_query(client_session.client_fd,client_session.id,conn);
     offline_message_push(user_id, conn);
     on_off_push(1, friends);
 
@@ -578,6 +582,10 @@ void offline_message_push(unsigned int user_id, MYSQL *conn)
              "WHERE om.receiver_id = '%d'; ",
              user_id);
     result = do_query(query, conn);
+   int num_rows = (int)mysql_num_rows(result);
+    if(num_rows==0){
+        return;
+    }
     char message[1024];
     while ((row = mysql_fetch_row(result)))
     {

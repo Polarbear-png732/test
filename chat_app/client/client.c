@@ -3,8 +3,7 @@
 #define SERVER_IP "127.0.0.1" // 服务器IP地址
 #define SERVER_PORT 10005     // 服务器端口
 #define FILE_TRANSFER_SERVER_PORT 10007
-int client_fd;
-int file_sock;                                    // 客户端套接字
+int client_fd;                                    // 客户端套接字
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; // 互斥锁
 char session_token[64];                           // 会话标识符
 Polling polling;
@@ -13,7 +12,7 @@ int main()
 {
     // 初始化客户端
     init_client();
-    file_sock_init();
+
     pthread_t send_thread, receive_thread, polling_pthread;
     // 创建线程发送请求
     if (pthread_create(&send_thread, NULL, send_request, NULL) != 0)
@@ -162,7 +161,9 @@ void *receive_response(void *arg)
         case REQUEST_FILE_TRANSFER:
         {
             printf("开始接收文件！ \n");
-            file_recv(buffer,file_sock);
+            int file_sock = file_sock_init(); // 收到传输请求再调用函数创建套接字，保证服务器accept到正确的套接字上
+            file_recv(buffer, file_sock);
+            close(file_sock);
             break;
         }
         default:
@@ -385,6 +386,14 @@ FileTransferRequest *build_file_transfer_req()
 
     printf("请输入文件名称（绝对路径）：\n");
     scanf("%s", request->file_name);
+
+    FILE *file_r;
+    file_r = fopen(request->file_name, "r");
+    if (file_r == NULL)
+    {
+        printf(" 没有找到文件，请重新输入文件名(绝对路径)\n");
+        scanf("%s", request->file_name);
+    }
     strcpy(file_name, request->file_name);
     long file_size = get_file_size(request->file_name);
     request->file_size = htonl((unsigned int)file_size);
@@ -430,7 +439,7 @@ void init_client()
     }
 }
 
-void file_sock_init()
+int file_sock_init()
 {
     struct sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;
@@ -438,7 +447,7 @@ void file_sock_init()
     server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
 
     // 创建文件传输套接字
-    file_sock = socket(AF_INET, SOCK_STREAM, 0);
+    int file_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (file_sock < 0)
     {
         perror("创建文件传输套接字失败");
@@ -452,13 +461,12 @@ void file_sock_init()
         close(file_sock);
         exit(1);
     }
+    return file_sock;
 }
 int recv_full(int sock, void *buf, size_t len)
 {
-
     size_t total_received = 0;  // 已接收字节数
     ssize_t bytes_received = 0; // 每次调用 recv 接收到的字节数
-
     while (total_received < len)
     {
         bytes_received = recv(sock, (char *)buf + total_received, len - total_received, 0);
@@ -482,10 +490,8 @@ int recv_full(int sock, void *buf, size_t len)
         }
         total_received += bytes_received; // 累计已接收字节数
     }
-
     return 1; // 成功接收完整数据
 }
-
 long get_file_size(const char *filename)
 {
     FILE *file = fopen(filename, "rb"); // 以二进制只读模式打开文件
@@ -536,23 +542,19 @@ void file_transfer(char *buffer)
     fclose(file);
 }
 
-void file_recv(char *buffer,int file_sock)
+void file_recv(char *buffer, int file_sock)
 {
     FileTransferRequest *req = (FileTransferRequest *)buffer;
     unsigned int file_size = ntohl(req->file_size);
     char filename[256];
     strcpy(filename, req->file_name);
-
     FILE *file = fopen(filename, "wb");
-
     char buf[BUFSIZE];
     FileTransferResponse *ack = (FileTransferResponse *)buf;
-
-    ack->block_number =htonl(0);
+    ack->block_number = htonl(0);
     ack->length = htonl(12);
     ack->request_code = htonl(RESPONSE_FILE_ACK); // 发送确认之后开始传文件
     send(file_sock, ack, 12, 0);
-
     int total_write = 0;
     while (1)
     {

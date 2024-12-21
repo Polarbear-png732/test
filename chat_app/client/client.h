@@ -223,6 +223,6 @@ long get_file_size(const char *filename);
 void file_recv(char *buffer,int file_sock);
 void file_transfer(char *buffer);
 void exit_client();
-void  file_sock_init();
+int file_sock_init();
 
 #endif // CLIENT_H

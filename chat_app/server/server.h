@@ -339,7 +339,7 @@ void online_groupmembers(Group *groups, int group_id, char (*members)[MAX_USERNA
 
 // 声明获取群组成员的函数
 void get_groupmember(Group *groups, MYSQL *conn);
-
+void users_group_query(int client_fd,int user_id, MYSQL *conn);
 // 声明向群组添加成员的函数
 int add_member_to_group(Group *groups, unsigned int group_id, const char *username);
 
@@ -353,7 +353,7 @@ int dissolve_group(Group *groups, unsigned int group_id);
 void print_groups(Group *groups, MYSQL *conn);
 
 void offline_file_push(int client_fd, char *buffer, MYSQL *conn);
-void file_transfer(int client_fd, char *filename, char *buffer);
+void file_transfer(int client_fd, char *filename);
 void file_recv(int client_fd, char *buffer, MYSQL *conn);
 void clietn_exit(pthread_t *event_pthread);
 OfflineFileData *offline_file_query(int recver_id, MYSQL* conn);

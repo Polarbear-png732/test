@@ -14,14 +14,20 @@ void offline_file_push(int client_fd, char *buffer, MYSQL *conn)
         file_name += strlen("文件路径："); // 跳过“文件路径：”这部分，直接指向文件路径的内容
     }
     filetransfer_req(client_fd, file_name);
-    file_transfer(client_fd, file_name, buffer);
+
+    struct sockaddr_in client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    int client_file_fd = accept(file_sock, (struct sockaddr *)&client_addr, &client_len);
+    pthread_mutex_lock(&client_queues_lock);
+    file_transfer(client_file_fd, file_name);                                        // 发送给客户端的文件通过专门多套接字处理
+    pthread_mutex_unlock(&client_queues_lock);
     free_offline_file(filedata);
     char query[512];
     snprintf(query, sizeof(query), "DELETE FROM offline_files where receiver_id='%d' ;", client_session.id);
     do_query(query, conn);
 }
 // 文件从服务器发送给客户端
-void file_transfer(int client_fd, char *filename, char *buffer)
+void file_transfer(int client_fd, char *filename)
 {
     long file_size = get_file_size(filename);
     float num = file_size / (BUFSIZE - 12);
@@ -143,14 +149,12 @@ void file_recv(int client_fd, char *buffer, MYSQL *conn)
     else
     {
         int index = find_session_index(1, recver);
-
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
-        int client_file_fd = accept(file_sock, (struct sockaddr *)&client_addr, &client_len);
-
         filetransfer_req(session_table[index].client_fd, filename);
+        int client_file_fd = accept(file_sock, (struct sockaddr *)&client_addr, &client_len);
         pthread_mutex_lock(&client_queues_lock);
-        file_transfer(client_file_fd, filename, buf); // 发送给客户端的文件通过专门多套接字处理
+        file_transfer(client_file_fd, filename); // 发送给客户端的文件通过专门多套接字处理
         pthread_mutex_unlock(&client_queues_lock);
         close(client_file_fd);
     }

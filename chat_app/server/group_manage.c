@@ -105,6 +105,11 @@ void group_invite_push(int client_fd, MYSQL *conn)
              "ORDER BY u.username ASC, g.group_name ASC;",
              invitee_id);
     result = do_query(query, conn);
+    int num_rows = (int)mysql_num_rows(result);
+    if (num_rows == 0)
+    {
+        return;
+    }
     while (row = mysql_fetch_row(result))
     {
         snprintf(temp, sizeof(temp), "%s邀请你进入群聊%s\n", row[0], row[1]);
@@ -157,7 +162,7 @@ void handle_add_group(int client_fd, char *buffer, MYSQL *conn)
         do_query(query, conn);
     }
 }
-//从数据库中查询某个群的id
+// 从数据库中查询某个群的id
 int find_group_id(char *groupname, MYSQL *conn)
 {
     char query[512];
@@ -172,7 +177,7 @@ int find_group_id(char *groupname, MYSQL *conn)
     mysql_free_result(result);
     return group_id;
 }
-//处理发送群聊消息的请求
+// 处理发送群聊消息的请求
 void group_message(int client_fd, char *buffer, MYSQL *conn)
 {
     char query[512];
@@ -190,7 +195,7 @@ void group_message(int client_fd, char *buffer, MYSQL *conn)
     online_groupmembers(groups, group_id, online_members); // 找到群中除了发消息者之外在线的人，并转发群消息
     for (int i = 0; i < MAX_MEMBERS; i++)
     {
-        if (strcmp(online_members[i], client_session.username) == 0||strcmp(online_members[i], "") == 0 ) //是发送这或者为空,跳过
+        if (strcmp(online_members[i], client_session.username) == 0 || strcmp(online_members[i], "") == 0) // 是发送这或者为空,跳过
         {
             continue;
         }
@@ -233,7 +238,7 @@ int get_groupnum(MYSQL *conn)
     mysql_free_result(result);
     return group_num;
 }
-// 获取当前所有群以及群里的成员，存入结构体数组
+
 // 获取群组成员
 void get_groupmember(Group *groups, MYSQL *conn)
 {
@@ -370,6 +375,7 @@ int dissolve_group(Group *groups, unsigned int group_id)
     }
     return 0; // 找不到指定的群组
 }
+
 void print_groups(Group *groups, MYSQL *conn)
 {
     char query[512];
@@ -436,4 +442,62 @@ void print_groups(Group *groups, MYSQL *conn)
 
     // 释放查询结果
     mysql_free_result(result);
+}
+
+// 查询某个用户加入的群和群成员，群主, 并推送给用户
+void users_group_query(int client_fd, int user_id, MYSQL *conn)
+{
+    char query[512];
+    MYSQL_RES *result;
+    MYSQL_ROW row;
+    snprintf(query, sizeof(query), "select group_id from group_members where user_id=%d;", user_id);
+
+    result = do_query(query, conn);
+    int num_rows = (int)mysql_num_rows(result);
+
+    int group[num_rows];
+    int i = 0;
+    while ((row = mysql_fetch_row(result)))
+    {
+        group[i] = atoi(row[0]);
+        i++;
+    }
+    mysql_free_result(result);
+    char group_push[512] = {0};
+    for (i = 0; i < num_rows; i++)
+    {
+        snprintf(query, sizeof(query),
+                 "SELECT "
+                 "g.group_name, "
+                 "u.username AS member_name, "
+                 "u_creator.username AS creator_name "
+                 "FROM "
+                 "groups g "
+                 "JOIN group_members gm ON g.id = gm.group_id "
+                 "JOIN users u ON gm.user_id = u.id "
+                 "JOIN users u_creator ON g.creator_id = u_creator.id "
+                 "WHERE "
+                 "g.id = %d;",
+                 group[i]);
+        result = do_query(query, conn);
+        int j = 0;
+
+        while ((row = mysql_fetch_row(result)))
+        {
+            if (j == 0)
+            {
+                int len = strlen(group_push);
+                snprintf(group_push + len, sizeof(group_push) - len, "群聊:%s  id：%d\n", row[0], group[i]);
+            }
+            strcat(group_push, row[1]);
+            if(strcmp(row[1],row[2])==0){
+                strcat(group_push,"（群主）");
+            }
+            strcat(group_push, "\n");
+            j++;
+        }
+        mysql_free_result(result);
+    }
+    printf("%s\n", group_push);
+    send_message(client_fd, group_push);
 }
