@@ -12,7 +12,6 @@ int main()
 {
     // 初始化客户端
     init_client();
-
     pthread_t send_thread, receive_thread, polling_pthread;
     // 创建线程发送请求
     if (pthread_create(&send_thread, NULL, send_request, NULL) != 0)

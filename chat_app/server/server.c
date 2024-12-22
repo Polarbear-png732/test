@@ -27,7 +27,6 @@ void *handle_client(void *arg)
         return NULL;
     }
     get_groupmember(groups, conn);
-    print_groups(groups,conn);
     unsigned int req_length;
     unsigned int size_len = sizeof(unsigned int);
 
@@ -38,7 +37,7 @@ void *handle_client(void *arg)
     setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
 
     printf("client connection!\n");
-    
+
     while (1)
     {
         if (recv_full(client_fd, buffer, size_len) <= 0) // 接收报文长度
@@ -50,7 +49,8 @@ void *handle_client(void *arg)
             else
             {
                 printf("接收报文长度失败或客户端断开！\n");
-                on_off_push(0, friends);
+                on_off_push(0);
+                delete_client_map(client_session.client_fd);
                 delete_session(client_session.session);
             }
             break;
@@ -201,19 +201,20 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pth
     event_arg->online_friend_count = &online_friend_count;
     event_arg->friend_count = &friend_count;
     event_arg->friends = friends;
+    event_arg->stop = 0;
     // 创建线程处理事件队列
     pthread_create(&event_thread, NULL, process_events, (void *)event_arg);
-    *queue_pthread = event_thread;
 
+    *queue_pthread = event_thread;
 
     // 上线时推送消息
     group_invite_push(client_fd, conn);
-    users_group_query(client_session.client_fd,client_session.id,conn);
+    users_group_query(client_session.client_fd, client_session.id, conn);
     offline_message_push(user_id, conn);
-    on_off_push(1, friends);
+    on_off_push(1);
 
-    //推送离线文件
-    offline_file_push(client_fd,buffer,conn);
+    // 推送离线文件
+    offline_file_push(client_fd, buffer, conn);
 }
 
 // 数据库连接函数
@@ -535,7 +536,7 @@ char **get_friend_list(int user_id, int *friend_count, MYSQL *conn)
     return friend_list;
 }
 // 上下线推送消息给在线好友
-void on_off_push(int on, char **friends)
+void on_off_push(int on)
 {
 
     Event event;
@@ -561,6 +562,9 @@ void on_off_push(int on, char **friends)
         for (i = 0; i < online_friend_count; i++)
         {
             int index = find_session_index(1, online_friends[i]);
+            if(index==-1){
+                continue;
+            }
             send_message(session_table[index].client_fd, online_push); // 向好友客户端发送上线消息
 
             EventQueue *queue = find_queue(session_table[index].client_fd); // 向好友服务器进程的事件队列中插入上线事件
@@ -582,8 +586,9 @@ void offline_message_push(unsigned int user_id, MYSQL *conn)
              "WHERE om.receiver_id = '%d'; ",
              user_id);
     result = do_query(query, conn);
-   int num_rows = (int)mysql_num_rows(result);
-    if(num_rows==0){
+    int num_rows = (int)mysql_num_rows(result);
+    if (num_rows == 0)
+    {
         return;
     }
     char message[1024];
@@ -661,7 +666,28 @@ int find_id_mysql(char *name, MYSQL *conn)
 
 void clietn_exit(pthread_t *event_pthread)
 {
+    on_off_push(0);
+    delete_client_map(client_session.client_fd);
+    delete_session(client_session.session);
+
     pthread_cancel(*event_pthread);
     pthread_cancel(pthread_self());
 }
 
+int delete_client_map(int client_fd)
+{
+
+    for (int i = 0; i < map_index; i++)
+    {
+        if (clientfd_queues_map[i].client_fd == client_fd)
+        {
+            for (int j = i; j < map_index; j++)
+            {
+                clientfd_queues_map[j] = clientfd_queues_map[j + 1];
+            }
+            map_index--;
+            return 1;
+        }
+    }
+    return 0;
+}

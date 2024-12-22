@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include <sys/time.h> // 用于设置套接字超时
 #include <pthread.h>
-
+#include <signal.h>
 #define PORT 10005
 #define FILE_TRANSFER_PORT 10007
 #define MAX_CLIENT 100
@@ -73,6 +73,7 @@ typedef struct
     char **friends;
     int *friend_count;
     int *online_friend_count;
+    int stop;
 } event_pthread_arg;
 
 // 使用 extern 关键字声明全局变量
@@ -316,7 +317,7 @@ int find_id_mysql(char *name, MYSQL *conn); // 获取离线用户的id
 char **get_online_friends(char **friends, int *friend_count, int *online_friend_count);
 
 void offline_message_push(unsigned int user_id, MYSQL *conn);
-void on_off_push(int on, char **friends);
+void on_off_push(int on);
 void create_group(int client_fd, char *buffer, MYSQL *conn);
 int online_query(char *friendname);
 void invite_to_group(int client_fd, char *buffer, MYSQL *conn);
@@ -360,4 +361,8 @@ OfflineFileData *offline_file_query(int recver_id, MYSQL* conn);
 long get_file_size(const char *filename);
 void free_offline_file(OfflineFileData *data);
 void filetransfer_req(int client_fd,char *filename);
+
+int delete_client_map(int client_fd);
+
+
 #endif

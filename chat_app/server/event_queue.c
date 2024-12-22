@@ -108,6 +108,11 @@ void *process_events(void *arg)
     EventQueue *queue = event_arg->queue;
     while (1)
     {
+        if (event_arg->stop == 1333)
+        {
+            free(event_arg);
+            break;
+        }
         Event *event = malloc(sizeof(Event));
         pop_event(queue, event); // 从事件队列中获取事件
         if (event->event_type == 1)
@@ -159,3 +164,4 @@ void update_online_friends(Event *event, event_pthread_arg *event_arg)
         printf("\n");
     }
 }
+
