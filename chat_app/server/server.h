@@ -57,7 +57,8 @@ typedef struct
     Event events[QUEUE_SIZE]; // 固定大小的事件数组
     int head;                 // 队列头部索引
     int tail;                 // 队列尾部索引
-    int count;                // 队列中的事件数
+    int count;
+    int stop;                // 队列中的事件数
 } EventQueue;
 // 存储每个客户端文件描述符和其事件队列的映射关系
 typedef struct
@@ -73,7 +74,6 @@ typedef struct
     char **friends;
     int *friend_count;
     int *online_friend_count;
-    int stop;
 } event_pthread_arg;
 
 // 使用 extern 关键字声明全局变量
@@ -275,7 +275,7 @@ int init_server();
 void *handle_client(void *arg);
 
 // 登录功能处理
-void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pthread);
+void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pthread,event_pthread_arg *event_arg);
 // 添加好友处理
 void handle_add_friend(int client_fd, char *buffer, MYSQL *conn);
 // 创建用户处理
@@ -356,13 +356,16 @@ void print_groups(Group *groups, MYSQL *conn);
 void offline_file_push(int client_fd, char *buffer, MYSQL *conn);
 void file_transfer(int client_fd, char *filename);
 void file_recv(int client_fd, char *buffer, MYSQL *conn);
-void clietn_exit(pthread_t *event_pthread);
+
+void clietn_exit(pthread_t *event_pthread, event_pthread_arg *event_arg, int client_fd, MYSQL *conn);
+
 OfflineFileData *offline_file_query(int recver_id, MYSQL* conn);
 long get_file_size(const char *filename);
 void free_offline_file(OfflineFileData *data);
 void filetransfer_req(int client_fd,char *filename);
 
 int delete_client_map(int client_fd);
-
-
+void free_friend_list(char **friend_list);
+void destroy_event_queue(EventQueue *queue);
+void stop_event_queue(EventQueue *queue);
 #endif

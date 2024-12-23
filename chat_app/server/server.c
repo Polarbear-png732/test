@@ -12,9 +12,10 @@ char online_members[MAX_MEMBERS][MAX_USERNAME_LENGTH] = {0};
 // 请求处理函数
 void *handle_client(void *arg)
 {
+    pthread_detach(pthread_self());
     pthread_t main_thread = pthread_self();
     pthread_t *queue_pthread = (pthread_t *)malloc(sizeof(pthread_t));
-
+    event_pthread_arg *event_arg = NULL;
     queue = init_event_queue();
 
     int client_fd = *(int *)arg;
@@ -74,7 +75,7 @@ void *handle_client(void *arg)
         switch (request_code)
         {
         case REQUEST_LOGIN:
-            handle_login(client_fd, buffer, conn, queue_pthread);
+            handle_login(client_fd, buffer, conn, queue_pthread, event_arg);
             break;
         case REQUEST_CREATEUSER:
             handle_create_user(client_fd, buffer, conn);
@@ -105,7 +106,7 @@ void *handle_client(void *arg)
             handle_add_group(client_fd, buffer, conn);
             break;
         case CLIENT_EXIT:
-            clietn_exit(queue_pthread);
+            clietn_exit(queue_pthread, event_arg, client_fd, conn);
             break;
         case REQUEST_GROUP_MESSAGE:
             group_message(client_fd, buffer, conn);
@@ -118,27 +119,11 @@ void *handle_client(void *arg)
             break;
         }
     }
-    // 清理资源
-    mysql_close(conn);
-    /*
-    for (int i = 0; i < MAX_FRIENDS; i++)
-    {
-        free(friends[i]);
-    }
-    free(friends);
-    // 释放 online_friends
-    for (int i = 0; i < online_friend_count; i++)
-    {
-        free(online_friends[i]);
-    }
-    // free(online_friends);
-    */
-    close(client_fd);
     return NULL;
 }
 
 // 登录处理函数
-void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pthread)
+void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pthread, event_pthread_arg *event_arg)
 {
     LoginRequest *login_req = (LoginRequest *)buffer;
 
@@ -195,13 +180,12 @@ void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pth
 
     pthread_t event_thread;
 
-    event_pthread_arg *event_arg = (event_pthread_arg *)malloc(sizeof(event_pthread_arg));
+    event_arg = (event_pthread_arg *)malloc(sizeof(event_pthread_arg));
     event_arg->online_friends = online_friends;
     event_arg->queue = queue;
     event_arg->online_friend_count = &online_friend_count;
     event_arg->friend_count = &friend_count;
     event_arg->friends = friends;
-    event_arg->stop = 0;
     // 创建线程处理事件队列
     pthread_create(&event_thread, NULL, process_events, (void *)event_arg);
 
@@ -535,13 +519,14 @@ char **get_friend_list(int user_id, int *friend_count, MYSQL *conn)
 
     return friend_list;
 }
+
 // 上下线推送消息给在线好友
 void on_off_push(int on)
 {
 
     Event event;
     memset(&event, 0, sizeof(Event));
-    event.event_type = on ? 1 : 0; // 1 = 上线, 0 = 下线
+    event.event_type = on ? 111 : 222; // 111 = 上线, 222 = 下线
     strncpy(event.username, client_session.username, MAX_USERNAME_LENGTH);
     char online_push[128];
     memset(online_push, 0, sizeof(online_push));
@@ -562,7 +547,8 @@ void on_off_push(int on)
         for (i = 0; i < online_friend_count; i++)
         {
             int index = find_session_index(1, online_friends[i]);
-            if(index==-1){
+            if (index == -1)
+            {
                 continue;
             }
             send_message(session_table[index].client_fd, online_push); // 向好友客户端发送上线消息
@@ -664,13 +650,26 @@ int find_id_mysql(char *name, MYSQL *conn)
     return id;
 }
 
-void clietn_exit(pthread_t *event_pthread)
+void clietn_exit(pthread_t *event_pthread, event_pthread_arg *event_arg, int client_fd, MYSQL *conn)
 {
     on_off_push(0);
+
+    pthread_mutex_lock(&client_queues_lock);
     delete_client_map(client_session.client_fd);
+    pthread_mutex_unlock;
+    stop_event_queue(queue);
+    destroy_event_queue(queue);
+
     delete_session(client_session.session);
 
     pthread_cancel(*event_pthread);
+    free(event_arg);
+    free(event_pthread);
+    free_friend_list(friends);
+    free_friend_list(online_friends);
+    mysql_close(conn);
+
+    close(client_fd);
     pthread_cancel(pthread_self());
 }
 
@@ -690,4 +689,23 @@ int delete_client_map(int client_fd)
         }
     }
     return 0;
+}
+
+void free_friend_list(char **friend_list)
+{
+    if (friend_list == NULL)
+    {
+        return;
+    }
+
+    for (int i = 0; i < MAX_FRIENDS; i++)
+    {
+        if (friend_list[i] != NULL)
+        {
+            free(friend_list[i]);  // 释放每一行分配的内存
+            friend_list[i] = NULL; // 将释放后的指针设置为 NULL
+        }
+    }
+    free(friend_list);  // 释放整个数组
+    friend_list = NULL; // 将释放后的指针设置为 NULL
 }

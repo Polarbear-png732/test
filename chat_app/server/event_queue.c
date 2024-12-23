@@ -6,12 +6,6 @@ extern __thread char **online_friends; // 在线好友列表与好友列表和�
 extern __thread int friend_count;
 extern __thread int online_friend_count;
 
-void destroy_event_queue(EventQueue *queue)
-{
-    pthread_mutex_destroy(&queue->mutex);
-    pthread_cond_destroy(&queue->cond);
-}
-
 int push_event(EventQueue *queue, Event event)
 {
     pthread_mutex_lock(&queue->mutex);
@@ -32,14 +26,31 @@ int push_event(EventQueue *queue, Event event)
     return 0;
 }
 
-int pop_event(EventQueue *queue, Event *event)
+void stop_event_queue(EventQueue *queue)
 {
     pthread_mutex_lock(&queue->mutex);
+    queue->stop = 10;                     // 设置停止标志
+    pthread_cond_broadcast(&queue->cond); // 唤醒所有等待的线程
+    pthread_mutex_unlock(&queue->mutex);
+    queue=NULL;
+}
 
-    while (queue->count == 0)
+int pop_event(EventQueue *queue, Event *event)
+{
+    if(queue==NULL)
+        return 0;
+    pthread_mutex_lock(&queue->mutex);
+
+    while (queue->count == 0 && queue->stop != 10)
     {
-        // 队列为空，等待
         pthread_cond_wait(&queue->cond, &queue->mutex);
+    }
+
+    // 如果队列已停止且为空，返回
+    if (queue->count == 0 && queue->stop == 10)
+    {
+        pthread_mutex_unlock(&queue->mutex);
+        return -1; // 或者其他表示停止的错误码
     }
 
     *event = queue->events[queue->head];
@@ -60,7 +71,15 @@ void init_client_queues()
         clientfd_queues_map[i].queue = NULL;
     }
 }
-
+void destroy_event_queue(EventQueue *queue)
+{
+    pthread_mutex_lock(&queue->mutex);
+    // 如果队列已经停止，直接销毁
+    pthread_cond_destroy(&queue->cond);
+    pthread_mutex_destroy(&queue->mutex);
+    pthread_mutex_unlock(&queue->mutex);
+    free(queue);
+}
 // 销毁所有事件队列
 void cleanup_client_queues()
 {
@@ -99,29 +118,26 @@ EventQueue *init_event_queue()
     EventQueue *queue = (EventQueue *)malloc(sizeof(EventQueue));
     pthread_mutex_init(&queue->mutex, NULL);
     pthread_cond_init(&queue->cond, NULL);
+    queue->stop = 0;
     return queue;
 }
 
 void *process_events(void *arg)
 {
+    pthread_detach(pthread_self());
     event_pthread_arg *event_arg = (event_pthread_arg *)arg;
     EventQueue *queue = event_arg->queue;
     while (1)
     {
-        if (event_arg->stop == 1333)
+        Event event;
+        pop_event(queue, &event); // 从事件队列中获取事件
+        if (event.event_type == 111)
         {
-            free(event_arg);
-            break;
+            update_online_friends(&event, event_arg);
         }
-        Event *event = malloc(sizeof(Event));
-        pop_event(queue, event); // 从事件队列中获取事件
-        if (event->event_type == 1)
+        else if (event.event_type == 222)
         {
-            update_online_friends(event, event_arg);
-        }
-        else if (event->event_type == 0)
-        {
-            update_online_friends(event, event_arg);
+            update_online_friends(&event, event_arg);
         }
         // 执行其他事件相关逻辑
     }
@@ -130,7 +146,7 @@ void *process_events(void *arg)
 
 void update_online_friends(Event *event, event_pthread_arg *event_arg)
 {
-    if (event->event_type == 1)
+    if (event->event_type == 111)
     {
         strncpy(event_arg->online_friends[*event_arg->online_friend_count], event->username, MAX_USERNAME_LENGTH - 1);
         (*event_arg->online_friend_count)++;
@@ -141,16 +157,16 @@ void update_online_friends(Event *event, event_pthread_arg *event_arg)
         }
         printf("\n");
     }
-    else
+    if (event->event_type == 222)
     {
 
         for (int i = 0; i < *event_arg->online_friend_count; i++)
         {
             if (strcmp(event->username, event_arg->online_friends[i]) == 0) // 找到下线好友后，将之后的好友往前移，删除下线好友
             {
-                for (int j = i; j < *event_arg->online_friend_count; j++)
+                for (int j = i; j < *event_arg->online_friend_count - 1; j++)
                 {
-                    *event_arg->online_friends[j] = *event_arg->online_friends[j + 1];
+                    strcpy(event_arg->online_friends[j], event_arg->online_friends[j + 1]);
                 }
                 break;
             }
@@ -164,4 +180,3 @@ void update_online_friends(Event *event, event_pthread_arg *event_arg)
         printf("\n");
     }
 }
-

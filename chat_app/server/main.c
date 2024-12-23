@@ -26,7 +26,6 @@ int main()
             perror("Failed to accept connection");
             continue;
         }
-
         // 创建一个线程处理该客户端
         pthread_t tid;
         pthread_create(&tid, NULL, handle_client, (void *)&client_fd);
