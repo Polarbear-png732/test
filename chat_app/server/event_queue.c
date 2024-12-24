@@ -28,17 +28,17 @@ int push_event(EventQueue *queue, Event event)
 
 void stop_event_queue(EventQueue *queue)
 {
-    pthread_mutex_lock(&queue->mutex);
     queue->stop = 10;                     // 设置停止标志
     pthread_cond_broadcast(&queue->cond); // 唤醒所有等待的线程
-    pthread_mutex_unlock(&queue->mutex);
-    queue=NULL;
 }
 
 int pop_event(EventQueue *queue, Event *event)
 {
-    if(queue==NULL)
+    if (queue->stop == 10)
+    {
         return 0;
+    }
+
     pthread_mutex_lock(&queue->mutex);
 
     while (queue->count == 0 && queue->stop != 10)
@@ -73,12 +73,9 @@ void init_client_queues()
 }
 void destroy_event_queue(EventQueue *queue)
 {
-    pthread_mutex_lock(&queue->mutex);
-    // 如果队列已经停止，直接销毁
+
     pthread_cond_destroy(&queue->cond);
     pthread_mutex_destroy(&queue->mutex);
-    pthread_mutex_unlock(&queue->mutex);
-    free(queue);
 }
 // 销毁所有事件队列
 void cleanup_client_queues()
@@ -129,6 +126,9 @@ void *process_events(void *arg)
     EventQueue *queue = event_arg->queue;
     while (1)
     {
+        if(queue->stop==10){
+            return;
+        }
         Event event;
         pop_event(queue, &event); // 从事件队列中获取事件
         if (event.event_type == 111)

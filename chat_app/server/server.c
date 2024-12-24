@@ -6,8 +6,7 @@ __thread char **online_friends = NULL; // 在线好友列表与好友列表和�
 __thread int friend_count = 0;
 __thread int online_friend_count = 0;
 __thread struct session_name client_session;
-
-EventQueue *queue = NULL;
+__thread EventQueue *queue = NULL;
 char online_members[MAX_MEMBERS][MAX_USERNAME_LENGTH] = {0};
 // 请求处理函数
 void *handle_client(void *arg)
@@ -656,7 +655,7 @@ void clietn_exit(pthread_t *event_pthread, event_pthread_arg *event_arg, int cli
 
     pthread_mutex_lock(&client_queues_lock);
     delete_client_map(client_session.client_fd);
-    pthread_mutex_unlock;
+    pthread_mutex_unlock(&client_queues_lock);
     stop_event_queue(queue);
     destroy_event_queue(queue);
 
@@ -665,6 +664,7 @@ void clietn_exit(pthread_t *event_pthread, event_pthread_arg *event_arg, int cli
     pthread_cancel(*event_pthread);
     free(event_arg);
     free(event_pthread);
+    free(queue);
     free_friend_list(friends);
     free_friend_list(online_friends);
     mysql_close(conn);
