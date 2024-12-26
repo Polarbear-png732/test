@@ -16,15 +16,18 @@
 #define REQUEST_LOGIN 10001
 #define RESPONSE_LOGIN 10021
 #define REQUEST_LOGOUT 10002
+
 #define REQUEST_ADD_FRIEND 10003
 #define REQUEST_HANDELE_ADD 10011
 #define REQUEST_DELETE_FRIEND 10004
 #define REQUEST_REMARK_FRIEND 10005
+#define REQUEST_FRIEND_REMARK 10033
 
 #define REQUEST_INVITE_TOGROUP 10013
 #define REQUEST_CREATE_GROUP 10006
 #define REQUEST_GROUP_MESSAGE 10007
 #define REQUEST_HANDLE_GROUP 10031
+#define REQUEST_GROUPNAME_RESET 10032
 
 #define REQUEST_PRIVATE_MESSAGE 10008
 #define REQUEST_FILE_TRANSFER 10009
@@ -110,7 +113,7 @@ typedef struct
 {
     unsigned int length;
     unsigned int request_code;
-    unsigned int status_code; // 200=成功, 404=好友不存在, 500=失败
+    unsigned int status_code; // 200=成功, 500=失败
 } SimpleResponse;
 
 // 好友备注请求结构体
@@ -120,7 +123,7 @@ typedef struct
     unsigned int request_code; // 请求码
     char session_token[64];
     char friend_username[32];
-    char remark[64]; // 好友备注
+    char remark[32]; // 好友备注
 } FriendRemarkRequest;
 // 响应用简单的回复报文
 
@@ -154,6 +157,16 @@ typedef struct
     char message[256];
 } GroupMessage;
 
+// 修改群名，只有群主可以修改
+typedef struct
+{
+    char session_token[64];
+    char group_newname[64];
+    unsigned int length;
+    unsigned int request_code; // 请求码
+    unsigned int group_id;
+} GroupNameRestet;
+
 typedef struct
 {
     unsigned int length;
@@ -184,12 +197,11 @@ typedef struct
     char file_name[128];
 } FileTransferRequest;
 
-
 typedef struct
 {
     unsigned int length;
-    unsigned int request_code;  //ack
-    unsigned int block_number;  //分块编号
+    unsigned int request_code; // ack
+    unsigned int block_number; // 分块编号
 } FileTransferResponse;
 
 typedef struct
@@ -218,9 +230,10 @@ InviteRequest *build_invite_request();
 HandleGroupInvite *build_handle_group_request();
 GroupMessage *build_group_message();
 FileTransferRequest *build_file_transfer_req();
-
+GroupNameRestet *build_group_name_reset();
+FriendRemarkRequest *build_friend_remark_request();
 long get_file_size(const char *filename);
-void file_recv(char *buffer,int file_sock);
+void file_recv(char *buffer, int file_sock);
 void file_transfer(char *buffer);
 void exit_client();
 int file_sock_init();

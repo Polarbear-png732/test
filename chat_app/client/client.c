@@ -46,7 +46,7 @@ void *send_request(void *arg)
 {
 
     int action;
-    printf("1.登录 2.创建用户3.添加好友或删除4.处理好友请求\n5.发送私聊消息6.创建群或者删除7.邀请好友入群或者踢人\n8.处理群聊邀请.9.退出10.发送群聊消息11发送文件给好友\n");
+    printf("1.登录 2.创建用户3.添加好友或删除4.处理好友请求\n5.发送私聊消息6.创建群或者删除7.邀请好友入群或者踢人\n8.处理群聊邀请.9.退出10.发送群聊消息11发送文件给好友\n12.修改群名13.好友别名");
     pthread_detach(pthread_self());
     while (1)
     {
@@ -99,6 +99,14 @@ void *send_request(void *arg)
         case 11:
             request = build_file_transfer_req();
             len = sizeof(FileTransferRequest);
+            break;
+        case 12:
+            request = build_group_name_reset();
+            len = sizeof(GroupNameRestet);
+            break;
+        case 13:
+            request = build_friend_remark_request();
+            len = sizeof(FriendRemarkRequest);
             break;
         default:
             printf("无效的操作\n");
@@ -375,17 +383,12 @@ FileTransferRequest *build_file_transfer_req()
 {
 
     FileTransferRequest *request = malloc(sizeof(FileTransferRequest));
-
     request->request_code = htonl(REQUEST_FILE_TRANSFER);
-
     request->length = htonl(sizeof(FileTransferRequest));
-
     printf("请输入好友名称： \n");
     scanf("%s", request->receiver_username);
-
     printf("请输入文件名称（绝对路径）：\n");
     scanf("%s", request->file_name);
-
     FILE *file_r;
     file_r = fopen(request->file_name, "r");
     if (file_r == NULL)
@@ -399,7 +402,6 @@ FileTransferRequest *build_file_transfer_req()
     char *filename;
     // 使用 strrchr 找到最后一个斜杠的位置
     filename = strrchr(request->file_name, '/');
-
     if (filename)
     {
         // 跳过斜杠，指向文件名
@@ -411,6 +413,37 @@ FileTransferRequest *build_file_transfer_req()
     request->session_token[TOKEN_LEN - 1] = '\0';
     printf("%s\n", request->file_name);
     return request;
+}
+
+GroupNameRestet *build_group_name_reset()
+{
+    GroupNameRestet *req = (GroupNameRestet *)malloc(sizeof(GroupNameRestet));
+    req->request_code = htonl(REQUEST_GROUPNAME_RESET);
+    req->length = htonl(sizeof(GroupNameRestet));
+    printf(" 请输入群id\n");
+    unsigned int id;
+    scanf("%u", &id);
+    req->group_id = htonl(id);
+    printf(" 请输入新的群名称\n");
+    scanf("%s", req->group_newname);
+    strncpy(req->session_token, session_token, TOKEN_LEN - 1);
+    req-> session_token[TOKEN_LEN - 1] = '\0';
+
+    return req;
+}
+
+FriendRemarkRequest *build_friend_remark_request()
+{
+    FriendRemarkRequest *req = (FriendRemarkRequest *)malloc(sizeof(FriendRemarkRequest));
+    req->request_code = htonl(REQUEST_FRIEND_REMARK);
+    req->length = htonl(sizeof(FriendRemarkRequest));
+    strncpy(req->session_token, session_token, TOKEN_LEN - 1);
+    req->session_token[TOKEN_LEN - 1] = '\0';
+    printf("请输入好友用户名: ");
+    scanf("%s", req->friend_username);
+    printf("请输入好友备注: ");
+    scanf("%s", req->remark);
+    return req;
 }
 // 初始化客户端
 void init_client()

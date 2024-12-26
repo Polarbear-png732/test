@@ -98,6 +98,7 @@ extern int file_sock;
 #define REQUEST_CREATE_GROUP 10006
 #define REQUEST_HANDLE_GROUP 10031
 #define REQUEST_GROUP_MESSAGE 10007
+#define  REQUEST_GROUPNAME_RESET 10032
 
 #define REQUEST_PRIVATE_MESSAGE 10008
 
@@ -185,7 +186,7 @@ typedef struct
     unsigned int request_code; // 请求码
     char session_token[64];
     char friend_username[32];
-    char remark[64]; // 好友备注
+    char remark[32]; // 好友备注
 } FriendRemarkRequest;
 // 响应用简单的回复报文
 
@@ -218,7 +219,13 @@ typedef struct
     char message[256];
 } GroupMessage;
 
-// 群组及其成员结构体
+typedef struct
+{
+    unsigned int length;
+    unsigned int request_code; // 请求码
+    unsigned int group_id;
+    char group_newname[64];
+} GroupNameRestet;
 
 typedef struct
 {
@@ -352,6 +359,8 @@ int add_group(Group *groups, unsigned int group_id, const char *group_name);
 // 声明解散群组的函数
 int dissolve_group(Group *groups, unsigned int group_id);
 void print_groups(Group *groups, MYSQL *conn);
+
+void groupname_reset(int client_fd,char *buffer,MYSQL *conn);
 
 void offline_file_push(int client_fd, char *buffer, MYSQL *conn);
 void file_transfer(int client_fd, char *filename);

@@ -113,6 +113,10 @@ void *handle_client(void *arg)
         case REQUEST_FILE_TRANSFER:
             file_recv(client_fd, buffer, conn);
             break;
+        case REQUEST_GROUPNAME_RESET:
+            groupname_reset(client_fd, buffer, conn);
+            break;
+
         default:
             printf("未知的请求代码: %u\n", request_code);
             break;

@@ -501,3 +501,30 @@ void users_group_query(int client_fd, int user_id, MYSQL *conn)
     printf("%s\n", group_push);
     send_message(client_fd, group_push);
 }
+
+void groupname_reset(int client_fd,char *buffer,MYSQL *conn)
+{
+    char query[512];
+    MYSQL_RES *result;
+    MYSQL_ROW row;
+    GroupNameRestet*req=( GroupNameRestet*)buffer;
+    unsigned int group_id=ntohl(req->group_id);
+
+    snprintf(query,sizeof(query),"select creator_id from groups where id=%u;",group_id);
+    result=do_query(query,conn);
+    row = mysql_fetch_row(result);
+    unsigned int creator=atoi(row[0]);
+
+    if(creator!=client_session.id){
+        send_message(client_fd,"只有群主才能修改！\n");
+    }
+    mysql_free_result(result);
+    snprintf(query,sizeof(query),"update groups set group_name='%s' where id=%d",req->group_newname,group_id);
+    do_query(query,conn);
+    send_message(client_fd,"修改成功");
+}
+
+
+
+
+
