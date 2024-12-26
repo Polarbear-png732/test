@@ -90,7 +90,7 @@ void handle_add_friend(int client_fd, char *buffer, MYSQL *conn)
         return;
     }
 
-    if (online_query(add_friend->friend_username))          //用户在线，发送消息提醒
+    if (online_query(add_friend->friend_username)) // 用户在线，发送消息提醒
     {
         char message[128];
         int i = find_session_index(1, add_friend->friend_username);
@@ -191,4 +191,22 @@ void push_friend(int client_fd, char *name, MYSQL *conn)
     }
     mysql_free_result(result);
     return;
+}
+
+
+
+void friend_remark(int client_fd, char *buffer, MYSQL *conn)
+{
+    FriendRemarkRequest *req = (FriendRemarkRequest *)buffer;
+    char query[512];
+    MYSQL_RES *result;
+    MYSQL_ROW row;
+
+    int user_id=find_id_mysql(client_session.username,conn);
+    int friend_id=find_id_mysql(req->friendname,conn);
+                                                                                                                                                                                                            
+    snprintf(query,sizeof(query),"insert into friend_aliases (user_id,friend_id,alias) "
+    "values(%d,%d,'%s')",user_id,friend_id,req->remark);
+    do_query(query,conn);
+    send_message(client_fd,"修改成功");
 }

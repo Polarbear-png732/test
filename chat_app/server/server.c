@@ -116,6 +116,9 @@ void *handle_client(void *arg)
         case REQUEST_GROUPNAME_RESET:
             groupname_reset(client_fd, buffer, conn);
             break;
+        case REQUEST_FRIEND_REMARK:
+            friend_remark(client_fd, buffer, conn);
+            break;
 
         default:
             printf("未知的请求代码: %u\n", request_code);
@@ -349,12 +352,27 @@ void send_simple(int sockfd, int success)
 // 用户上线推送好友列表
 void push_fri_list(char **list, int count, int client_fd, MYSQL *conn)
 {
-
+    char query[512];
+    MYSQL_RES *result;
+    MYSQL_ROW row;
     char fri_list[255] = "好友列表：\n";
-
+    int friend_id;
     for (int i = 0; i < count; i++)
     {
         strncat(fri_list, list[i], MAX_USERNAME_LENGTH - 1); // 拼接好友用户名
+        friend_id = find_id_mysql(list[i], conn);
+        snprintf(query, sizeof(query), "select alias from friend_aliases where user_id=%d and friend_id=%d;", client_session.id, friend_id);
+        printf("%s\n",query);
+        result = do_query(query, conn);
+        row = mysql_fetch_row(result);
+        int row_num = mysql_num_rows(result);
+        if (result != NULL && row_num > 0)
+        {
+            strcat(fri_list, "(");
+            strcat(fri_list, row[0]);
+            strcat(fri_list, ")");
+            mysql_free_result(result);
+        }
         strncat(fri_list, ":", 1);
         int found = 0; // 标志变量，初始值为未找到
         for (int j = 0; j < session_table_index; j++)

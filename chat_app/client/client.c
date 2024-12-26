@@ -440,7 +440,7 @@ FriendRemarkRequest *build_friend_remark_request()
     strncpy(req->session_token, session_token, TOKEN_LEN - 1);
     req->session_token[TOKEN_LEN - 1] = '\0';
     printf("请输入好友用户名: ");
-    scanf("%s", req->friend_username);
+    scanf("%s", req->friendname);
     printf("请输入好友备注: ");
     scanf("%s", req->remark);
     return req;

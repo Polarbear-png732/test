@@ -20,7 +20,6 @@
 #define REQUEST_ADD_FRIEND 10003
 #define REQUEST_HANDELE_ADD 10011
 #define REQUEST_DELETE_FRIEND 10004
-#define REQUEST_REMARK_FRIEND 10005
 #define REQUEST_FRIEND_REMARK 10033
 
 #define REQUEST_INVITE_TOGROUP 10013
@@ -122,7 +121,7 @@ typedef struct
     unsigned int length;
     unsigned int request_code; // 请求码
     char session_token[64];
-    char friend_username[32];
+    char friendname[32];
     char remark[32]; // 好友备注
 } FriendRemarkRequest;
 // 响应用简单的回复报文
