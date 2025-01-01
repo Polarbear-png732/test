@@ -411,7 +411,7 @@ void private_message(int client, char *buffer, MYSQL *conn)
     i = find_session_index(0, message->session_token);
 
     char send_online[512];
-    snprintf(send_online, sizeof(send_online), "%s:%s", session_table[i].username, message->message);
+    snprintf(send_online, sizeof(send_online), "私聊消息%s:%s", session_table[i].username, message->message);
 
     // 在线直接发送，否则插入到数据库
     if (online)
@@ -598,9 +598,10 @@ void offline_message_push(unsigned int user_id, MYSQL *conn)
     {
         return;
     }
-    char message[1024];
+    char message[2048]={0};
     while ((row = mysql_fetch_row(result)))
     {
+        strcat(message,"好友消息");
         strcat(message, row[0]);
         strcat(message, ":");
         strcat(message, row[1]);

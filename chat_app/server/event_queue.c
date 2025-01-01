@@ -127,7 +127,7 @@ void *process_events(void *arg)
     while (1)
     {
         if(queue->stop==10){
-            return;
+            return NULL;
         }
         Event event;
         pop_event(queue, &event); // 从事件队列中获取事件

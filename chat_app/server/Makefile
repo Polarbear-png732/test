@@ -5,16 +5,16 @@ LIBS = -lmysqlclient
 SRCS = main.c init.c server.c event_queue.c group_manage.c friend_manage.c file_transfer.c
 OBJS = $(SRCS:.c=.o)
 
-TARGET =server
+TARGET = server
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CC) -o $(TARGET) $(OBJS) $(LIBS) $(CFLAGS)
+	rm -f $(OBJS) # 编译成功后删除 .o 文件
 
 %.o: %.c
 	$(CC) -c $(CFLAGS) $<
 
 clean:
-	rm -f $(OBJS) TARGET
-
+	rm -f $(OBJS) $(TARGET)

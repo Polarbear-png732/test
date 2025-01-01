@@ -19,18 +19,16 @@ void handle_create_user(int client_fd, char *buffer, MYSQL *conn)
     char query[512];
     snprintf(query, sizeof(query), "INSERT INTO users (username,password) VALUES ('%s','%s' );",
              create_req->username, create_req->password);
-
+        char message[64]="创建用户成功！";
     if (mysql_query(conn, query))
     {
-        response->status_code = htonl(FAIL);
-        send(client_fd, response, len_response, 0);
+        snprintf(message,sizeof(message),"用户已经存在，请换个用户名");
+        send_message(client_fd,message);
         free(response);
         return;
     }
 
-    // 返回成功响应
-    response->status_code = htonl(SUCCESS);
-    send(client_fd, response, len_response, 0);
+    send_message(client_fd,message);
     free(response);
     return;
 }
@@ -38,6 +36,7 @@ void handle_create_user(int client_fd, char *buffer, MYSQL *conn)
 // 处理添加或删除好友请求
 void handle_add_friend(int client_fd, char *buffer, MYSQL *conn)
 {
+    printf("handle_add_friend\n");
     FriendRequest *add_friend = (FriendRequest *)buffer;
     int i = find_session_index(0, add_friend->session_token);
     unsigned int user_id = 0;
@@ -112,7 +111,7 @@ void handle_accept_add(int client_fd, char *buffer, MYSQL *conn)
 {
     HandleFriendRequest *handle_add = (HandleFriendRequest *)buffer;
     int i = find_session_index(0, handle_add->session_token);
-    int friend_id = session_table[i].id; // 找到处理好友申请的用户id用于后续查询
+    int friend_id = session_table[i].id; // 找到处理好友申请的用户id用于后续查询，user_id是发起好友申请的用户的id
     int user_id;
     int table_id; // 数据库中好友表的表项id
     char status[16];
@@ -146,8 +145,16 @@ void handle_accept_add(int client_fd, char *buffer, MYSQL *conn)
              "UPDATE friends SET status = '%s' WHERE id='%d';", status, table_id);
 
     do_query(query, conn);
-
-    send_simple(client_fd, SUCCESS);
+    if(strcmp("accepted",status)==0){
+        char onoff[64];
+        if(online_query(handle_add->friend_username)){
+            snprintf(onoff,sizeof(onoff),"添加成功好友%s在线",handle_add->friend_username);
+            send_message(client_fd,onoff);
+        }else{
+            snprintf(onoff,sizeof(onoff),"添加成功好友%s不在线",handle_add->friend_username);
+            send_message(client_fd,onoff);
+        }
+    }
     return;
 }
 
