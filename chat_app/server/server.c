@@ -40,11 +40,11 @@ void *handle_client(void *arg)
 
     while (1)
     {
+        memset(buffer, 0, sizeof(buffer));
         if (recv_full(client_fd, buffer, size_len) <= 0) // 接收报文长度
         {
             if (errno == EWOULDBLOCK || errno == EAGAIN)
             {
-                printf("客户端 10 秒未发送请求，下线处理。\n");
             }
             else
             {
@@ -362,7 +362,7 @@ void push_fri_list(char **list, int count, int client_fd, MYSQL *conn)
         strncat(fri_list, list[i], MAX_USERNAME_LENGTH - 1); // 拼接好友用户名
         friend_id = find_id_mysql(list[i], conn);
         snprintf(query, sizeof(query), "select alias from friend_aliases where user_id=%d and friend_id=%d;", client_session.id, friend_id);
-        printf("%s\n",query);
+        printf("%s\n", query);
         result = do_query(query, conn);
         row = mysql_fetch_row(result);
         int row_num = mysql_num_rows(result);
@@ -413,23 +413,38 @@ void private_message(int client, char *buffer, MYSQL *conn)
     char send_online[512];
     snprintf(send_online, sizeof(send_online), "私聊消息%s:%s", session_table[i].username, message->message);
 
-    // 在线直接发送，否则插入到数据库
-    if (online)
-    {
-        send_message(recver_fd, send_online);
-        return;
-    }
-
     int sender_id = find_uid(message->session_token);
     int recver_id = find_id_mysql(message->receiver_username, conn);
-
     char query[512];
-    snprintf(query, sizeof(query), "INSERT INTO offline_messages (sender_id,receiver_id,message) "
-                                   "VALUES ('%d', '%d','%s');",
-             sender_id, recver_id, message->message);
-    do_query(query, conn);
+    snprintf(query, sizeof(query),
+             "SELECT * FROM friends "
+             "WHERE (user_id = %d AND friend_id = %d) "
+             "   OR (user_id = %d AND friend_id = %d);",
+             sender_id, recver_id, recver_id, sender_id);
 
-    return;
+    mysql_query(conn, query);
+    MYSQL_RES *result = mysql_store_result(conn);
+    if (mysql_num_rows(result) == 0)
+    {
+        send_message(client_session.client_fd, "不是好友，无法发送信息");
+        return;
+    }
+    else
+    {
+        printf("他们是好友。\n");
+        // 在线直接发送，否则插入到数据库
+        if (online)
+        {
+            send_message(recver_fd, send_online);
+            return;
+        }
+        char query[512];
+        snprintf(query, sizeof(query), "INSERT INTO offline_messages (sender_id,receiver_id,message) "
+                                       "VALUES ('%d', '%d','%s');",
+                 sender_id, recver_id, message->message);
+        do_query(query, conn);
+        return;
+    }
 }
 
 MYSQL_RES *do_query(char *query, MYSQL *conn)
@@ -598,10 +613,10 @@ void offline_message_push(unsigned int user_id, MYSQL *conn)
     {
         return;
     }
-    char message[2048]={0};
+    char message[2048] = {0};
     while ((row = mysql_fetch_row(result)))
     {
-        strcat(message,"好友消息");
+        strcat(message, "好友消息");
         strcat(message, row[0]);
         strcat(message, ":");
         strcat(message, row[1]);

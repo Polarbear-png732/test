@@ -1,7 +1,7 @@
 #include "client.h"
 
 #define SERVER_IP "10.215.13.23" // 服务器IP地址
-#define SERVER_PORT 10005     // 服务器端口
+#define SERVER_PORT 10005        // 服务器端口
 #define FILE_TRANSFER_SERVER_PORT 10007
 int client_fd;                                    // 客户端套接字
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; // 互斥锁
@@ -46,7 +46,23 @@ void *send_request(void *arg)
 {
 
     int action;
-    printf("1.登录 2.创建用户3.添加好友或删除4.处理好友请求\n5.发送私聊消息6.创建群或者删除7.邀请好友入群或者踢人\n8.处理群聊邀请.9.退出10.发送群聊消息11发送文件给好友\n12.修改群名13.好友别名\n");
+    printf("+-----------------------------+\n");
+    printf("|         功能菜单           |\n");
+    printf("+-----------------------------+\n");
+    printf("|  1. 登录                   |\n");
+    printf("|  2. 创建用户               |\n");
+    printf("|  3. 添加/删除好友          |\n");
+    printf("|  4. 处理好友请求           |\n");
+    printf("|  5. 发送私聊消息           |\n");
+    printf("|  6. 创建/删除群            |\n");
+    printf("|  7. 邀请/踢出群成员        |\n");
+    printf("|  8. 处理群聊邀请           |\n");
+    printf("|  9. 退出                   |\n");
+    printf("| 10. 发送群聊消息           |\n");
+    printf("| 11. 发送文件给好友         |\n");
+    printf("| 12. 修改群名               |\n");
+    printf("| 13. 设置好友别名           |\n");
+    printf("+-----------------------------+\n");
     pthread_detach(pthread_self());
     while (1)
     {
@@ -116,7 +132,6 @@ void *send_request(void *arg)
         if (request != NULL)
         {
             pthread_mutex_lock(&lock);
-            printf("Sending request: length=%u, request_code=%u\n", ntohl(*(unsigned int *)request), ntohl(*(unsigned int *)(request + sizeof(unsigned int))));
             send(client_fd, request, len, 0);
             pthread_mutex_unlock(&lock);
             free(request); // 释放动态分配的内存
@@ -149,8 +164,6 @@ void *receive_response(void *arg)
             printf("Login response:\n");
             printf("Status Code: %u\n", ntohl(response->status_code));
             strncpy(session_token, response->session_token, sizeof(session_token) - 1);
-            session_token[sizeof(session_token) - 1] = '\0';
-            printf("%s\n", session_token);
             break;
         }
         case SIMPLE_RESPONSE:
@@ -427,7 +440,7 @@ GroupNameRestet *build_group_name_reset()
     printf(" 请输入新的群名称\n");
     scanf("%s", req->group_newname);
     strncpy(req->session_token, session_token, TOKEN_LEN - 1);
-    req-> session_token[TOKEN_LEN - 1] = '\0';
+    req->session_token[TOKEN_LEN - 1] = '\0';
 
     return req;
 }
@@ -559,10 +572,7 @@ void file_transfer(char *buffer)
         ssize_t sent;
         sent = send(client_fd, buffer, bytes_read + 12, 0);
 
-        printf("sent:%ld\n", sent);
-
         recv(client_fd, ack, 12, 0);
-        printf("第%u块已经确认\n", ntohl(ack->block_number));
         pthread_mutex_unlock(&lock);
         block_number++;
         if (feof(file))
@@ -595,16 +605,14 @@ void file_recv(char *buffer, int file_sock)
         size_t bytes_write;
         bytes_write = fwrite(buf + 12, 1, bytes_recv - 12, file);
         total_write += bytes_write;
-        printf("total_write%d\n", total_write);
         if (bytes_write == bytes_recv - 12)
         { // 写入成功，发送ack，开始下一轮接收
             ack->block_number = *(unsigned int *)(buf + 8);
-            printf("第%u块接收完成\n", ntohl(ack->block_number));
             send(file_sock, ack, 12, 0);
         }
         if (total_write >= file_size)
         {
-            printf("接收完毕\n");
+            printf("接收完毕,请到当前目录下查看\n");
             break;
         }
     }

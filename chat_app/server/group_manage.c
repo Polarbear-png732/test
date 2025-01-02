@@ -16,7 +16,6 @@ void create_group(int client_fd, char *buffer, MYSQL *conn)
 
     if (action == 1)
     {
-
         snprintf(query, sizeof(query), "INSERT INTO groups (group_name,creator_id) "
                                        "VALUES ('%s','%d'); ",
                  group->group_name, creator_id);
@@ -28,7 +27,9 @@ void create_group(int client_fd, char *buffer, MYSQL *conn)
         do_query(query, conn);
         add_group(groups, grou_id, group->group_name);
         add_member_to_group(groups, grou_id, group->group_name);
-
+        char message[32];
+        snprintf(message,sizeof(message),"创建成功，群聊id：%d",grou_id);
+        send_message(client_fd,message);
         return;
     }
     int groupnum = get_groupnum(conn);
@@ -149,7 +150,9 @@ void handle_add_group(int client_fd, char *buffer, MYSQL *conn)
         do_query(query, conn);
         int groupnum = get_groupnum(conn);
         add_member_to_group(groups, grou_id, client_session.username);
-        print_groups(groups, conn);
+        char message[32];
+        snprintf(message,sizeof(message),"加入群聊成功，群id%d",grou_id);
+        send_message(client_fd,message);
     }
     else
     {
