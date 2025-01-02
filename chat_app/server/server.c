@@ -8,6 +8,7 @@ __thread int online_friend_count = 0;
 __thread struct session_name client_session;
 __thread EventQueue *queue = NULL;
 char online_members[MAX_MEMBERS][MAX_USERNAME_LENGTH] = {0};
+
 // 请求处理函数
 void *handle_client(void *arg)
 {
@@ -27,6 +28,7 @@ void *handle_client(void *arg)
         return NULL;
     }
     get_groupmember(groups, conn);
+    print_groups(groups, conn);
     unsigned int req_length;
     unsigned int size_len = sizeof(unsigned int);
 
@@ -85,13 +87,6 @@ void *handle_client(void *arg)
         case REQUEST_HANDELE_ADD:
             handle_accept_add(client_fd, buffer, conn);
             break;
-        case REQUEST_POLLING:
-        {
-            Polling *p = (Polling *)buffer;
-            int polling = find_session_index(0, p->token);
-            // push_friend(client_fd, session_table[polling].username, conn);
-            break;
-        }
         case REQUEST_PRIVATE_MESSAGE:
             private_message(client_fd, buffer, conn);
             break;
@@ -119,7 +114,15 @@ void *handle_client(void *arg)
         case REQUEST_FRIEND_REMARK:
             friend_remark(client_fd, buffer, conn);
             break;
-
+        case GET_FRIEND_LIST:
+            push_friend_list(conn);
+            break;
+        case GET_GROUP:
+            group_info(buffer);
+            break;
+        case GET_ALL_GROUP:
+            group_lsit();
+            break;
         default:
             printf("未知的请求代码: %u\n", request_code);
             break;
@@ -505,55 +508,6 @@ char **get_online_friends(char **friends, int *friend_count, int *online_friend_
 
     *online_friend_count = k;
     return new_friends;
-}
-// 从数据库中获取用户好友列表
-char **get_friend_list(int user_id, int *friend_count, MYSQL *conn)
-{
-    // 分配结果数组
-    char **friend_list = malloc(MAX_FRIENDS * sizeof(char *));
-    for (int i = 0; i < MAX_FRIENDS; i++)
-    {
-        friend_list[i] = malloc(MAX_USERNAME_LENGTH * sizeof(char));
-    }
-    MYSQL_RES *res;
-    MYSQL_ROW row;
-    // 初始化计数
-    *friend_count = 0;
-
-    // 构建 SQL 查询
-    char query[512];
-    snprintf(query, sizeof(query),
-             "SELECT u.username AS friend_username "
-             "FROM friends f "
-             "JOIN users u "
-             "ON (f.friend_id = u.id AND f.user_id = %d AND f.status = 'accepted') "
-             "OR (f.user_id = u.id AND f.friend_id = %d AND f.status = 'accepted');",
-             user_id, user_id);
-
-    res = do_query(query, conn);
-
-    if (res == NULL)
-    {
-        fprintf(stderr, "mysql_store_result() failed: %s\n", mysql_error(conn));
-
-        exit(EXIT_FAILURE);
-    }
-
-    // 解析结果
-    while ((row = mysql_fetch_row(res)))
-    {
-        if (*friend_count >= MAX_FRIENDS)
-            break; // 防止超出数组范围
-
-        // 将用户名复制到结果数组中
-        strncpy(friend_list[*friend_count], row[0], MAX_USERNAME_LENGTH);
-        (*friend_count)++;
-    }
-
-    // 释放资源
-    mysql_free_result(res);
-
-    return friend_list;
 }
 
 // 上下线推送消息给在线好友

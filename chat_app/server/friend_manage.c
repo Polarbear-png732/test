@@ -19,16 +19,16 @@ void handle_create_user(int client_fd, char *buffer, MYSQL *conn)
     char query[512];
     snprintf(query, sizeof(query), "INSERT INTO users (username,password) VALUES ('%s','%s' );",
              create_req->username, create_req->password);
-        char message[64]="创建用户成功！";
+    char message[64] = "创建用户成功！";
     if (mysql_query(conn, query))
     {
-        snprintf(message,sizeof(message),"用户已经存在，请换个用户名");
-        send_message(client_fd,message);
+        snprintf(message, sizeof(message), "用户已经存在，请换个用户名");
+        send_message(client_fd, message);
         free(response);
         return;
     }
 
-    send_message(client_fd,message);
+    send_message(client_fd, message);
     free(response);
     return;
 }
@@ -36,7 +36,6 @@ void handle_create_user(int client_fd, char *buffer, MYSQL *conn)
 // 处理添加或删除好友请求
 void handle_add_friend(int client_fd, char *buffer, MYSQL *conn)
 {
-    printf("handle_add_friend\n");
     FriendRequest *add_friend = (FriendRequest *)buffer;
     int i = find_session_index(0, add_friend->session_token);
     unsigned int user_id = 0;
@@ -86,6 +85,9 @@ void handle_add_friend(int client_fd, char *buffer, MYSQL *conn)
                  user_id, friend_id, friend_id, user_id);
 
         do_query(query, conn);
+        char message[64];
+        snprintf(message, sizeof(message), "%s删除成功", add_friend->friend_username);
+        send_message(client_session.client_fd, message);
         return;
     }
 
@@ -145,17 +147,21 @@ void handle_accept_add(int client_fd, char *buffer, MYSQL *conn)
              "UPDATE friends SET status = '%s' WHERE id='%d';", status, table_id);
 
     do_query(query, conn);
-    if(strcmp("accepted",status)==0){
+    if (strcmp("accepted", status) == 0)
+    {
         char onoff[64];
-        if(online_query(handle_add->friend_username)){
-            snprintf(onoff,sizeof(onoff),"添加成功%s在线",handle_add->friend_username);
-            send_message(client_fd,onoff);
-            int i=find_session_index(1,handle_add->friend_username);
-            snprintf(onoff,sizeof(onoff),"添加成功%s在线",client_session.username);
-            send_message(session_table[i].client_fd,onoff);
-        }else{
-            snprintf(onoff,sizeof(onoff),"添加成功%s不在线",handle_add->friend_username);
-            send_message(client_fd,onoff);
+        if (online_query(handle_add->friend_username))
+        {
+            snprintf(onoff, sizeof(onoff), "添加成功%s在线", handle_add->friend_username);
+            send_message(client_fd, onoff);
+            int i = find_session_index(1, handle_add->friend_username);
+            snprintf(onoff, sizeof(onoff), "添加成功%s在线", client_session.username);
+            send_message(session_table[i].client_fd, onoff);
+        }
+        else
+        {
+            snprintf(onoff, sizeof(onoff), "添加成功%s不在线", handle_add->friend_username);
+            send_message(client_fd, onoff);
         }
     }
     return;
@@ -203,8 +209,6 @@ void push_friend(int client_fd, char *name, MYSQL *conn)
     return;
 }
 
-
-
 void friend_remark(int client_fd, char *buffer, MYSQL *conn)
 {
     FriendRemarkRequest *req = (FriendRemarkRequest *)buffer;
@@ -212,12 +216,101 @@ void friend_remark(int client_fd, char *buffer, MYSQL *conn)
     MYSQL_RES *result;
     MYSQL_ROW row;
 
-    int user_id=find_id_mysql(client_session.username,conn);
-    int friend_id=find_id_mysql(req->friendname,conn);
-                                                                                                                                                                                                            
-    snprintf(query,sizeof(query),"insert into friend_aliases (user_id,friend_id,alias) "
-    "values(%d,%d,'%s')",user_id,friend_id,req->remark);
-    do_query(query,conn);
-    send_message(client_fd,"修改成功");
-    
+    int user_id = find_id_mysql(client_session.username, conn);
+    int friend_id = find_id_mysql(req->friendname, conn);
+
+    // 检查是否存在记录
+    snprintf(query, sizeof(query),
+             "SELECT COUNT(*) FROM friend_aliases WHERE user_id=%d AND friend_id=%d",
+             user_id, friend_id);
+    if (mysql_query(conn, query))
+    {
+        fprintf(stderr, "查询失败: %s\n", mysql_error(conn));
+        return;
+    }
+    MYSQL_RES *res = mysql_store_result(conn);
+    if (res == NULL)
+    {
+        fprintf(stderr, "获取查询结果失败: %s\n", mysql_error(conn));
+        return;
+    }
+    row = mysql_fetch_row(res);
+    int exists = row && atoi(row[0]) > 0; // 检查是否已有数据
+    mysql_free_result(res);
+
+    if (exists)
+    {
+        // 如果记录存在，执行更新操作
+        snprintf(query, sizeof(query),
+                 "UPDATE friend_aliases SET alias='%s' WHERE user_id=%d AND friend_id=%d",
+                 req->remark, user_id, friend_id);
+    }
+    else
+    {
+        // 如果记录不存在，执行插入操作
+        snprintf(query, sizeof(query),
+                 "INSERT INTO friend_aliases (user_id, friend_id, alias) VALUES (%d, %d, '%s')",
+                 user_id, friend_id, req->remark);
+    }
+    do_query(query, conn);
+    send_message(client_fd, "修改成功");
+}
+
+// 从数据库中获取用户好友列表
+char **get_friend_list(int user_id, int *friend_count, MYSQL *conn)
+{
+    // 分配结果数组
+    char **friend_list = malloc(MAX_FRIENDS * sizeof(char *));
+    for (int i = 0; i < MAX_FRIENDS; i++)
+    {
+        friend_list[i] = malloc(MAX_USERNAME_LENGTH * sizeof(char));
+    }
+    MYSQL_RES *res;
+    MYSQL_ROW row;
+    // 初始化计数
+    *friend_count = 0;
+
+    // 构建 SQL 查询
+    char query[512];
+    snprintf(query, sizeof(query),
+             "SELECT u.username AS friend_username "
+             "FROM friends f "
+             "JOIN users u "
+             "ON (f.friend_id = u.id AND f.user_id = %d AND f.status = 'accepted') "
+             "OR (f.user_id = u.id AND f.friend_id = %d AND f.status = 'accepted');",
+             user_id, user_id);
+
+    res = do_query(query, conn);
+
+    if (res == NULL)
+    {
+        fprintf(stderr, "mysql_store_result() failed: %s\n", mysql_error(conn));
+
+        exit(EXIT_FAILURE);
+    }
+
+    // 解析结果
+    while ((row = mysql_fetch_row(res)))
+    {
+        if (*friend_count >= MAX_FRIENDS)
+            break; // 防止超出数组范围
+
+        // 将用户名复制到结果数组中
+        strncpy(friend_list[*friend_count], row[0], MAX_USERNAME_LENGTH);
+        (*friend_count)++;
+    }
+
+    // 释放资源
+    mysql_free_result(res);
+
+    return friend_list;
+}
+
+// 客户端发来获取好友列表请求时，将列表发过去给客户端
+void push_friend_list(MYSQL *conn)
+{
+    free_friend_list(friends);
+    friends = NULL;
+    friends = get_friend_list(client_session.id, &friend_count, conn);
+    push_fri_list(friends, friend_count, client_session.client_fd, conn);
 }

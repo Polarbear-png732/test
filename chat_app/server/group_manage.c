@@ -5,6 +5,7 @@ extern __thread char **online_friends; // 在线好友列表与好友列表和�
 extern __thread int friend_count;
 extern __thread int online_friend_count;
 extern __thread pthread_mutex_t friend_lock;
+
 void create_group(int client_fd, char *buffer, MYSQL *conn)
 {
     GroupCreateRequest *group = (GroupCreateRequest *)buffer;
@@ -25,11 +26,10 @@ void create_group(int client_fd, char *buffer, MYSQL *conn)
         int grou_id = find_group_id(group->group_name, conn);
         snprintf(query, sizeof(query), "INSERT INTO group_members (group_id,user_id) VALUES('%d','%d');", grou_id, creator_id);
         do_query(query, conn);
-        add_group(groups, grou_id, group->group_name);
-        add_member_to_group(groups, grou_id, group->group_name);
         char message[32];
-        snprintf(message,sizeof(message),"创建成功，群聊id：%d",grou_id);
-        send_message(client_fd,message);
+        snprintf(message, sizeof(message), "创建成功，群聊id：%d", grou_id);
+        send_message(client_fd, message);
+        print_groups(groups, conn);
         return;
     }
     int groupnum = get_groupnum(conn);
@@ -38,7 +38,8 @@ void create_group(int client_fd, char *buffer, MYSQL *conn)
                                    "where creator_id='%d' and group_name='%s'; ",
              creator_id, group->group_name);
     do_query(query, conn);
-    dissolve_group(groups, grou_id);
+    send_message(client_session.client_fd,"删除成功");
+    get_groupmember(groups,conn);
     return;
 }
 
@@ -52,38 +53,43 @@ void invite_to_group(int client_fd, char *buffer, MYSQL *conn)
     MYSQL_RES *result;
     MYSQL_ROW row;
 
-    snprintf(query, sizeof(query),
-             "SELECT u.id AS user_id, g.id AS group_id "
-             "FROM users u "
-             "JOIN groups g "
-             "WHERE u.username = '%s' AND g.group_name = '%s';",
-             invite->friendname, invite->group_name);
-    result = do_query(query, conn);
-    row = mysql_fetch_row(result);
-    int friend_id = atoi(row[0]);
-    int group_id = atoi(row[1]);
-    mysql_free_result(result);
-
+    int friend_id = find_id_mysql(invite->friendname, conn);
+    int group_id = ntohl(invite->group_id);
     if (action == 0)
     { // 如果是删除成员的请求，删除并更新结构体数组
+        snprintf(query, sizeof(query), "select creator_id from groups where id=%d", group_id);
+        result = do_query(query, conn);
+        row = mysql_fetch_row(result);
+        int creator_id = atoi(row[0]);
+        if (client_session.id != creator_id)
+        {
+            send_message(client_session.client_fd, "只有群主才能删除群成员 ");
+            return;
+        }
         snprintf(query, sizeof(query), "DELETE FROM group_members "
-                                       "where group_id='%d and user_id='%d';",
+                                       "WHERE group_id = %d AND user_id = %d;",
                  group_id, friend_id);
         do_query(query, conn);
         int groupnum = get_groupnum(conn);
-        remove_member_from_group(groups, group_id, invite->friendname);
+        get_groupmember(groups, conn);
+        mysql_free_result(result);
         return;
     }
     snprintf(query, sizeof(query),
              "INSERT INTO  group_invites (group_id,sender_id,invitee_id) VALUES ('%d','%d','%d');",
              group_id, client_session.id, friend_id);
     do_query(query, conn);
+
     if (online_query(invite->friendname))
     {
+        snprintf(query, sizeof(query), "select group_name from groups where id=%d", group_id);
+        result = do_query(query, conn);
+        row = mysql_fetch_row(result);
         char group_invite[128];
         snprintf(group_invite, sizeof(group_invite),
-                 "%s邀请你进入群聊：%s", client_session.username, invite->group_name);
+                 "%s邀请你进入群聊：%s", client_session.username, row[0]);
         send_message(session_table[friend_index].client_fd, group_invite);
+        mysql_free_result(result);
         return;
     }
 }
@@ -148,11 +154,11 @@ void handle_add_group(int client_fd, char *buffer, MYSQL *conn)
         snprintf(query, sizeof(query),
                  "INSERT INTO group_members (group_id,user_id) VALUES(%d,%d);", grou_id, invitee_id);
         do_query(query, conn);
-        int groupnum = get_groupnum(conn);
-        add_member_to_group(groups, grou_id, client_session.username);
+
         char message[32];
-        snprintf(message,sizeof(message),"加入群聊成功，群id%d",grou_id);
-        send_message(client_fd,message);
+        snprintf(message, sizeof(message), "加入群聊成功，群id%d", grou_id);
+        send_message(client_fd, message);
+        print_groups(groups, conn);
     }
     else
     {
@@ -208,6 +214,7 @@ void group_message(int client_fd, char *buffer, MYSQL *conn)
         send_message(session_table[index].client_fd, group_message);
     }
 }
+
 void online_groupmembers(Group *groups, int group_id, char (*members)[MAX_USERNAME_LENGTH])
 {
 
@@ -240,211 +247,6 @@ int get_groupnum(MYSQL *conn)
     int group_num = row ? atoi(row[0]) : 0;
     mysql_free_result(result);
     return group_num;
-}
-
-// 获取群组成员
-void get_groupmember(Group *groups, MYSQL *conn)
-{
-    char query[512];
-    MYSQL_RES *result;
-    MYSQL_ROW row;
-    snprintf(query, sizeof(query),
-             "SELECT g.id AS group_id, g.group_name, gm.user_id, u.username "
-             "FROM groups g JOIN group_members gm ON g.id = gm.group_id "
-             "JOIN users u ON gm.user_id = u.id "
-             "ORDER BY g.id, gm.user_id;");
-    result = mysql_query(conn, query) == 0 ? mysql_store_result(conn) : NULL;
-    if (!result)
-    {
-        return;
-    }
-
-    int group_index = -1;
-    int group_id = -1;
-
-    while ((row = mysql_fetch_row(result)))
-    {
-        int current_group_id = atoi(row[0]);
-
-        // 检查是否是新的群组
-        if (current_group_id != group_id)
-        {
-            group_id = current_group_id;
-            group_index++;
-            groups[group_index].group_id = current_group_id;
-            strncpy(groups[group_index].group_name, row[1], sizeof(groups[group_index].group_name) - 1);
-            groups[group_index].group_name[sizeof(groups[group_index].group_name) - 1] = '\0'; // 确保字符串结尾
-            groups[group_index].member_count = 0;                                              // 初始化成员计数
-        }
-
-        // 添加成员到当前群组
-        int member_index = groups[group_index].member_count;
-        if (member_index < MAX_MEMBERS)
-        {
-            strncpy(groups[group_index].members[member_index], row[3], MAX_USERNAME_LENGTH - 1);
-            groups[group_index].members[member_index][MAX_USERNAME_LENGTH - 1] = '\0'; // 确保字符串结尾
-            groups[group_index].member_count++;
-        }
-    }
-
-    mysql_free_result(result);
-}
-
-// 添加成员到群组
-int add_member_to_group(Group *groups, unsigned int group_id, const char *username)
-{
-    for (int i = 0; i < 10; i++)
-    {
-        if (groups[i].group_id == group_id)
-        {
-            // 检查是否有足够的空间加入新成员
-            if (groups[i].member_count < MAX_MEMBERS)
-            {
-                // 确保成员名不重复
-                for (int j = 0; j < groups[i].member_count; j++)
-                {
-                    if (strcmp(groups[i].members[j], username) == 0)
-                    {
-                        return 0; // 用户已经是群组成员
-                    }
-                }
-                // 加入新成员
-                strncpy(groups[i].members[groups[i].member_count], username, MAX_USERNAME_LENGTH - 1);
-                groups[i].members[groups[i].member_count][MAX_USERNAME_LENGTH - 1] = '\0'; // 确保字符串结尾
-                groups[i].member_count++;
-                return 1; // 成员加入成功
-            }
-            return 0; // 群组已满，无法加入新成员
-        }
-    }
-    return 0; // 找不到指定的群组
-}
-
-// 从群组中移除成员
-int remove_member_from_group(Group *groups, unsigned int group_id, const char *username)
-{
-    for (int i = 0; i < 10; i++)
-    {
-        if (groups[i].group_id == group_id)
-        {
-            for (int j = 0; j < groups[i].member_count; j++)
-            {
-                if (strcmp(groups[i].members[j], username) == 0)
-                {
-                    // 找到成员并将其移除
-                    for (int k = j; k < groups[i].member_count - 1; k++)
-                    {
-                        strcpy(groups[i].members[k], groups[i].members[k + 1]);
-                    }
-                    groups[i].member_count--;
-                    return 1; // 成员移除成功
-                }
-            }
-            return 0; // 成员未找到
-        }
-    }
-    return 0; // 找不到指定的群组
-}
-
-// 添加新群组
-int add_group(Group *groups, unsigned int group_id, const char *group_name)
-{
-    // 检查是否已经有10个群组
-    for (int i = 0; i < 10; i++)
-    {
-        if (groups[i].group_id == 0)
-        { // 0 表示空的群组
-            groups[i].group_id = group_id;
-            strncpy(groups[i].group_name, group_name, sizeof(groups[i].group_name) - 1);
-            groups[i].group_name[sizeof(groups[i].group_name) - 1] = '\0'; // 确保字符串结尾
-            groups[i].member_count = 0;
-            return 1; // 群组创建成功
-        }
-    }
-    return 0; // 群组已满，无法创建新群组
-}
-
-// 删除群组
-int dissolve_group(Group *groups, unsigned int group_id)
-{
-    for (int i = 0; i < 10; i++)
-    {
-        if (groups[i].group_id == group_id)
-        {
-            groups[i].group_id = 0; // 通过设置 group_id 为 0 来标记群组已解散
-            groups[i].member_count = 0;
-            return 1; // 群组解散成功
-        }
-    }
-    return 0; // 找不到指定的群组
-}
-
-void print_groups(Group *groups, MYSQL *conn)
-{
-    char query[512];
-    MYSQL_RES *result;
-    MYSQL_ROW row;
-
-    // SQL 查询语句
-    snprintf(query, sizeof(query),
-             "SELECT g.id AS group_id, g.group_name, gm.user_id, u.username "
-             "FROM groups g JOIN group_members gm ON g.id = gm.group_id "
-             "JOIN users u ON gm.user_id = u.id "
-             "ORDER BY g.id, gm.user_id;");
-
-    // 执行查询
-    result = mysql_query(conn, query) == 0 ? mysql_store_result(conn) : NULL;
-    if (!result)
-    {
-        fprintf(stderr, "Query execution failed or no results.\n");
-        return;
-    }
-
-    int group_index = -1;
-    int group_id = -1;
-
-    // 遍历查询结果
-    while ((row = mysql_fetch_row(result)))
-    {
-        int current_group_id = atoi(row[0]);
-
-        // 检查是否是新的群组
-        if (current_group_id != group_id)
-        {
-            group_id = current_group_id;
-            group_index++;
-            groups[group_index].group_id = current_group_id;
-            strncpy(groups[group_index].group_name, row[1], sizeof(groups[group_index].group_name) - 1);
-            groups[group_index].group_name[sizeof(groups[group_index].group_name) - 1] = '\0'; // 确保字符串结尾
-            groups[group_index].member_count = 0;                                              // 初始化成员计数
-        }
-
-        // 添加成员到当前群组
-        int member_index = groups[group_index].member_count;
-        if (member_index < MAX_MEMBERS)
-        {
-            strncpy(groups[group_index].members[member_index], row[3], MAX_USERNAME_LENGTH - 1);
-            groups[group_index].members[member_index][MAX_USERNAME_LENGTH - 1] = '\0'; // 确保字符串结尾
-            groups[group_index].member_count++;
-        }
-    }
-
-    // 打印群组信息
-    for (int i = 0; i <= group_index; i++)
-    {
-        printf("Group ID: %u, Group Name: %s, Members (%d):\n",
-               groups[i].group_id,
-               groups[i].group_name,
-               groups[i].member_count);
-
-        for (int j = 0; j < groups[i].member_count; j++)
-        {
-            printf("  - %s\n", groups[i].members[j]);
-        }
-    }
-
-    // 释放查询结果
-    mysql_free_result(result);
 }
 
 // 查询某个用户加入的群和群成员，群主, 并推送给用户
@@ -493,8 +295,9 @@ void users_group_query(int client_fd, int user_id, MYSQL *conn)
                 snprintf(group_push + len, sizeof(group_push) - len, "群聊:%s  id：%d\n", row[0], group[i]);
             }
             strcat(group_push, row[1]);
-            if(strcmp(row[1],row[2])==0){
-                strcat(group_push,"（群主）");
+            if (strcmp(row[1], row[2]) == 0)
+            {
+                strcat(group_push, "（群主）");
             }
             strcat(group_push, "\n");
             j++;
@@ -505,29 +308,170 @@ void users_group_query(int client_fd, int user_id, MYSQL *conn)
     send_message(client_fd, group_push);
 }
 
-void groupname_reset(int client_fd,char *buffer,MYSQL *conn)
+void groupname_reset(int client_fd, char *buffer, MYSQL *conn)
 {
     char query[512];
     MYSQL_RES *result;
     MYSQL_ROW row;
-    GroupNameRestet*req=( GroupNameRestet*)buffer;
-    unsigned int group_id=ntohl(req->group_id);
+    GroupNameRestet *req = (GroupNameRestet *)buffer;
+    unsigned int group_id = ntohl(req->group_id);
 
-    snprintf(query,sizeof(query),"select creator_id from groups where id=%u;",group_id);
-    result=do_query(query,conn);
+    snprintf(query, sizeof(query), "select creator_id from groups where id=%u;", group_id);
+    result = do_query(query, conn);
     row = mysql_fetch_row(result);
-    unsigned int creator=atoi(row[0]);
+    unsigned int creator = atoi(row[0]);
 
-    if(creator!=client_session.id){
-        send_message(client_fd,"只有群主才能修改！\n");
+    if (creator != client_session.id)
+    {
+        send_message(client_fd, "只有群主才能修改！\n");
     }
     mysql_free_result(result);
-    snprintf(query,sizeof(query),"update groups set group_name='%s' where id=%d",req->group_newname,group_id);
-    do_query(query,conn);
-    send_message(client_fd,"修改成功");
+    snprintf(query, sizeof(query), "update groups set group_name='%s' where id=%d", req->group_newname, group_id);
+    do_query(query, conn);
+    send_message(client_fd, "修改成功");
+    print_groups(groups, conn);
 }
 
+void fetch_group_data(Group *groups, MYSQL *conn, int print_results)
+{
+    memset(groups, 0, 10 * sizeof(Group));
+    char query[512];
+    MYSQL_RES *result;
+    MYSQL_ROW row;
 
+    snprintf(query, sizeof(query),
+             "SELECT g.id AS group_id, g.group_name, gm.user_id, u.username "
+             "FROM groups g JOIN group_members gm ON g.id = gm.group_id "
+             "JOIN users u ON gm.user_id = u.id "
+             "ORDER BY g.id, gm.user_id;");
 
+    result = mysql_query(conn, query) == 0 ? mysql_store_result(conn) : NULL;
+    if (!result)
+    {
+        if (print_results)
+        {
+            fprintf(stderr, "Query execution failed or no results.\n");
+        }
+        return;
+    }
 
+    int group_index = -1;
+    int group_id = -1;
 
+    while ((row = mysql_fetch_row(result)))
+    {
+        int current_group_id = atoi(row[0]);
+
+        if (current_group_id != group_id)
+        {
+            group_id = current_group_id;
+            group_index++;
+            groups[group_index].group_id = current_group_id;
+            strncpy(groups[group_index].group_name, row[1], sizeof(groups[group_index].group_name) - 1);
+            groups[group_index].group_name[sizeof(groups[group_index].group_name) - 1] = '\0';
+            groups[group_index].member_count = 0;
+        }
+
+        int member_index = groups[group_index].member_count;
+        if (member_index < MAX_MEMBERS)
+        {
+            strncpy(groups[group_index].members[member_index], row[3], MAX_USERNAME_LENGTH - 1);
+            groups[group_index].members[member_index][MAX_USERNAME_LENGTH - 1] = '\0';
+            groups[group_index].member_count++;
+        }
+    }
+
+    if (print_results)
+    {
+        for (int i = 0; i <= group_index; i++)
+        {
+            printf("Group ID: %u, Group Name: %s, Members (%d):\n",
+                   groups[i].group_id,
+                   groups[i].group_name,
+                   groups[i].member_count);
+
+            for (int j = 0; j < groups[i].member_count; j++)
+            {
+                printf("  - %s\n", groups[i].members[j]);
+            }
+        }
+    }
+
+    mysql_free_result(result);
+}
+
+// 打印所有群组的信息，这些信息存储在全局结构体数组groups中
+
+void print_groups(Group *groups, MYSQL *conn)
+{
+    fetch_group_data(groups, conn, 1);
+}
+
+// 获取数据库中所有群组及其成员，存到结构体数组groups中
+void get_groupmember(Group *groups, MYSQL *conn)
+{
+    fetch_group_data(groups, conn, 0);
+}
+
+void group_info(char *buffer)
+{
+    GetGroup *group = (GetGroup *)buffer;
+
+    char message[255];
+    int message_size = sizeof(message);
+    int i;
+    for (i = 0; i < 10; i++)
+    {
+        if (ntohl(group->goup_id) == groups[i].group_id)
+        {
+            break;
+        }
+    }
+    int offset = 0;
+    offset += snprintf(message + offset, message_size - offset,
+                       "Group ID: %u, Group Name: %s, Members (%d):\n",
+                       groups[i].group_id,
+                       groups[i].group_name,
+                       groups[i].member_count);
+
+    for (int j = 0; j < groups[i].member_count; j++)
+    {
+        offset += snprintf(message + offset, message_size - offset,
+                           "  - %s\n", groups[i].members[j]);
+    }
+    printf("%s", message);
+    send_message(client_session.client_fd, message);
+}
+
+void group_lsit()
+{
+    char message[1024]; // 增大缓冲区以适应所有群组信息
+    int message_size = sizeof(message);
+    int offset = 0;
+    offset += snprintf(message + offset, message_size - offset, "Group Information:\n");
+    for (int i = 0; i < 10; i++)
+    {
+        if (groups[i].group_id == 0)
+        {
+            // 跳过无效群组
+            continue;
+        }
+        // 格式化群组信息
+        offset += snprintf(message + offset, message_size - offset,
+                           "Group ID: %u, Group Name: %s, Members (%d):\n",
+                           groups[i].group_id,
+                           groups[i].group_name,
+                           groups[i].member_count);
+        // 格式化成员信息
+        for (int j = 0; j < groups[i].member_count; j++)
+        {
+            offset += snprintf(message + offset, message_size - offset,
+                               "  - %s\n", groups[i].members[j]);
+        }
+    }
+    // 确保字符串以 null 结尾
+    message[message_size - 1] = '\0';
+    // 打印结果
+    printf("%s", message);
+    send_message(client_session.client_fd,message);
+}

@@ -10,9 +10,16 @@
 
 #include <unistd.h>
 #include <signal.h>
-
+#include <string.h>
 // 协议请求类型
 // 请求码定义
+
+#define BUFSIZE 4096
+#define TOKEN_LEN 64
+#define MAX_USERNAME_LENGTH 32
+#define SUCCESS 200
+#define FAIL 500
+
 #define REQUEST_LOGIN 10001
 #define RESPONSE_LOGIN 10021
 #define REQUEST_LOGOUT 10002
@@ -38,14 +45,17 @@
 
 #define RESPONSE_MESSAGE 10040
 #define SIMPLE_RESPONSE 10050
-#define SUCCESS 200
-#define FAIL 500
 
 #define CLIENT_EXIT 10000
 
-#define BUFSIZE 4096
-#define TOKEN_LEN 64
-#define MAX_USERNAME_LENGTH 32
+#define GET_FRIEND_LIST 10041
+#define GET_GROUP 10034
+#define GET_ALL_GROUP 10035
+typedef struct
+{
+    unsigned int length;
+    unsigned int request_code; // 请求码
+}GetAllGroup;
 typedef struct
 {
     unsigned int length;
@@ -53,6 +63,17 @@ typedef struct
     char message[256];
 } FeedbackMessage;
 
+typedef struct
+{
+    unsigned int length;
+    unsigned int request_code; // 请求码
+} GetFriendList;
+typedef struct
+{
+    unsigned int length;
+    unsigned int request_code; // 请求码
+    unsigned int goup_id;
+} GetGroup;
 // 登录请求结构体
 typedef struct
 {
@@ -141,9 +162,9 @@ typedef struct
     unsigned int length;
     unsigned int request_code;
     int action;
+    int group_id;
     char friendname[32];
     char session_token[64];
-    char group_name[64];
 } InviteRequest;
 
 // 群组消息广播结构体
@@ -159,19 +180,14 @@ typedef struct
 // 修改群名，只有群主可以修改
 typedef struct
 {
-    char session_token[64];
-    char group_newname[64];
     unsigned int length;
     unsigned int request_code; // 请求码
     unsigned int group_id;
+    char session_token[64];
+    char group_newname[64];
 } GroupNameRestet;
 
-typedef struct
-{
-    unsigned int length;
-    unsigned int status_code; // 200=成功, 500=失败
-    char group_id[64];        // 创建成功的群组ID
-} GroupCreateResponse;
+
 
 // 点对点消息结构体
 typedef struct
@@ -231,10 +247,13 @@ GroupMessage *build_group_message();
 FileTransferRequest *build_file_transfer_req();
 GroupNameRestet *build_group_name_reset();
 FriendRemarkRequest *build_friend_remark_request();
+GetFriendList *build_get_fri_list();
+GetGroup *build_get_group();
 long get_file_size(const char *filename);
 void file_recv(char *buffer, int file_sock);
 void file_transfer(char *buffer);
 void exit_client();
 int file_sock_init();
-
+GetAllGroup*build_get_all_group();
+void option();
 #endif // CLIENT_H

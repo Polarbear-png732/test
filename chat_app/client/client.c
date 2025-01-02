@@ -26,6 +26,7 @@ int main()
         perror("创建接收线程失败");
         exit(1);
     }
+    option();
     /*
     sleep(20);                                //必须在登录之后才发送，否则服务器发生段错误
     if (pthread_create(&polling_pthread, NULL,send_polling, NULL) != 0) {
@@ -41,38 +42,38 @@ int main()
     return 0;
 }
 
+void clear_input_buffer()
+{
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF)
+        ; // 读取并丢弃字符，直到换行符或文件结束符
+}
 // 发送请求函数
 void *send_request(void *arg)
 {
 
     int action;
-    printf("+-----------------------------+\n");
-    printf("|         功能菜单           |\n");
-    printf("+-----------------------------+\n");
-    printf("|  1. 登录                   |\n");
-    printf("|  2. 创建用户               |\n");
-    printf("|  3. 添加/删除好友          |\n");
-    printf("|  4. 处理好友请求           |\n");
-    printf("|  5. 发送私聊消息           |\n");
-    printf("|  6. 创建/删除群            |\n");
-    printf("|  7. 邀请/踢出群成员        |\n");
-    printf("|  8. 处理群聊邀请           |\n");
-    printf("|  9. 退出                   |\n");
-    printf("| 10. 发送群聊消息           |\n");
-    printf("| 11. 发送文件给好友         |\n");
-    printf("| 12. 修改群名               |\n");
-    printf("| 13. 设置好友别名           |\n");
-    printf("+-----------------------------+\n");
+
     pthread_detach(pthread_self());
     while (1)
     {
+        int action = 0;
+        if (scanf("%d", &action) != 1)
+        {
+            printf("无效的输入，请输入数字。\n");
+            clear_input_buffer(); // 清空输入缓冲区
+            continue;
+        }
+        clear_input_buffer(); // 清空输入缓冲区
 
-        scanf("%d", &action);
         void *request = NULL;
         unsigned int len = 0;
 
         switch (action)
         {
+        case 0:
+            option();
+            break;
         case 1:
             request = build_login_request();
             len = sizeof(LoginRequest);
@@ -103,7 +104,7 @@ void *send_request(void *arg)
             break;
         case 8:
             request = build_handle_group_request();
-            len = sizeof(InviteRequest);
+            len = sizeof(HandleGroupInvite);
             break;
         case 9:
             exit_client();
@@ -124,15 +125,30 @@ void *send_request(void *arg)
             request = build_friend_remark_request();
             len = sizeof(FriendRemarkRequest);
             break;
+        case 14:
+            request = build_get_fri_list();
+            len = sizeof(GetFriendList);
+            break; // 添加 break 防止落入 case 15
+        case 15:
+            request = build_get_group();
+            len = sizeof(GetGroup);
+            break;
+        case 16:
+            request = build_get_all_group();
+            len = sizeof(GetAllGroup);
+            break;
         default:
-            printf("无效的操作\n");
+            printf("无效的操作，请输入正确的编号。\n");
             continue;
         }
 
         if (request != NULL)
         {
             pthread_mutex_lock(&lock);
-            send(client_fd, request, len, 0);
+            if (send(client_fd, request, len, 0) == -1)
+            {
+                perror("发送失败");
+            }
             pthread_mutex_unlock(&lock);
             free(request); // 释放动态分配的内存
         }
@@ -338,14 +354,16 @@ InviteRequest *build_invite_request()
         exit(1);
     }
     request->request_code = htonl(REQUEST_INVITE_TOGROUP);
-    printf("邀请好友进群输入1，删除群成员输入0\n");
+    printf("邀请好友进群输入1，删除群成员输入0:\n");
     int action;
+    int group_id;
     scanf("%d", &action);
-    printf("请输入群聊名称：\n");
-    scanf("%s", request->group_name);
+    printf("请输入群聊ID：\n");
+    scanf("%d", &group_id);
     printf("请输入好友名字：\n");
     scanf("%s", request->friendname);
     request->action = htonl(action);
+    request->group_id = htonl(group_id);
     strncpy(request->session_token, session_token, TOKEN_LEN - 1);
     request->session_token[TOKEN_LEN - 1] = '\0';
     request->length = htonl(sizeof(InviteRequest));
@@ -457,6 +475,35 @@ FriendRemarkRequest *build_friend_remark_request()
     printf("请输入好友备注: ");
     scanf("%s", req->remark);
     return req;
+}
+
+GetFriendList *build_get_fri_list()
+{
+
+    GetFriendList *req = (GetFriendList *)malloc(sizeof(GetFriendList));
+    req->length = htonl(sizeof(GetFriendList));
+    req->request_code = htonl(GET_FRIEND_LIST);
+    return req;
+}
+GetGroup *build_get_group()
+{
+
+    GetGroup *req = (GetGroup *)malloc(sizeof(GetGroup));
+    req->length = htonl(sizeof(GetGroup));
+    req->request_code = htonl(GET_GROUP);
+    int group_id;
+    printf("请输入群聊ID：\n ");
+    scanf("%d", &group_id);
+    req->goup_id = htonl(group_id);
+    return req;
+}
+
+GetAllGroup *build_get_all_group()
+{
+    GetAllGroup *request = malloc(sizeof(GetAllGroup));
+    request->request_code = htonl(GET_ALL_GROUP);
+    request->length = htonl(sizeof(GetAllGroup));
+    return request;
 }
 // 初始化客户端
 void init_client()
@@ -617,4 +664,33 @@ void file_recv(char *buffer, int file_sock)
         }
     }
     fclose(file);
+}
+
+void option()
+{
+    printf("\n");
+    printf("╔═══════════════════════════════════════════════╗\n");
+    printf("║                  \033[1;34m功能菜单\033[0m                        ║\n");
+    printf("╠═══════════════════════════════════════════════╣\n");
+    printf("║ \033[1;32m  0.\033[0m 获取功能菜单                           ║\n");
+    printf("║ \033[1;32m  1.\033[0m 登录                                   ║\n");
+    printf("║ \033[1;32m  2.\033[0m 创建用户                               ║\n");
+    printf("║ \033[1;32m  3.\033[0m 添加/删除好友                          ║\n");
+    printf("║ \033[1;32m  4.\033[0m 处理好友请求                           ║\n");
+    printf("║ \033[1;32m  5.\033[0m 发送私聊消息                           ║\n");
+    printf("║ \033[1;32m  6.\033[0m 创建/删除群                            ║\n");
+    printf("║ \033[1;32m  7.\033[0m 邀请/踢出群成员                        ║\n");
+    printf("║ \033[1;32m  8.\033[0m 处理群聊邀请                           ║\n");
+    printf("║ \033[1;31m  9.\033[0m 退出                                   ║\n");
+    printf("║ \033[1;32m 10.\033[0m 发送群聊消息                           ║\n");
+    printf("║ \033[1;32m 11.\033[0m 发送文件给好友                         ║\n");
+    printf("║ \033[1;32m 12.\033[0m 修改群名                               ║\n");
+    printf("║ \033[1;32m 13.\033[0m 设置好友别名                           ║\n");
+    printf("║ \033[1;32m 14.\033[0m 获取好友列表                           ║\n");
+    printf("║ \033[1;32m 15.\033[0m 获取某个群的信息                       ║\n");
+    printf("║ \033[1;32m 16.\033[0m 获取所有群的信息                       ║\n");
+    printf("╠═══════════════════════════════════════════════╣\n");
+    printf("║ \033[1;33m提示:\033[0m 输入对应数字选择操作，或输入9退出程序     ║\n");
+    printf("╚═══════════════════════════════════════════════╝\n");
+    printf("\n");
 }

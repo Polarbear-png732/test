@@ -58,7 +58,7 @@ typedef struct
     int head;                 // 队列头部索引
     int tail;                 // 队列尾部索引
     int count;
-    int stop;                // 队列中的事件数
+    int stop; // 队列中的事件数
 } EventQueue;
 // 存储每个客户端文件描述符和其事件队列的映射关系
 typedef struct
@@ -99,7 +99,7 @@ extern int file_sock;
 #define REQUEST_CREATE_GROUP 10006
 #define REQUEST_HANDLE_GROUP 10031
 #define REQUEST_GROUP_MESSAGE 10007
-#define  REQUEST_GROUPNAME_RESET 10032
+#define REQUEST_GROUPNAME_RESET 10032
 
 #define REQUEST_PRIVATE_MESSAGE 10008
 
@@ -109,14 +109,32 @@ extern int file_sock;
 #define REQUEST_CREATEUSER 10010
 #define REQUEST_POLLING 10012
 
-
 #define CLIENT_EXIT 10000
+#define GET_FRIEND_LIST 10041
+#define GET_GROUP 10034
+#define GET_ALL_GROUP 10035
 
 #define RESPONSE_MESSAGE 10040
 #define SIMPLE_RESPONSE 10050
 #define SUCCESS 200
 #define FAIL 500
 #define BUFSIZE 4096
+typedef struct
+{
+    unsigned int length;
+    unsigned int request_code; // 请求码
+}GetAllGroup;
+typedef struct
+{
+    unsigned int length;
+    unsigned int request_code; // 请求码
+} GetFriendList;
+typedef struct
+{
+    unsigned int length;
+    unsigned int request_code; // 请求码
+    unsigned int goup_id;
+} GetGroup;
 typedef struct
 {
     unsigned int length;
@@ -206,9 +224,9 @@ typedef struct
     unsigned int length;
     unsigned int request_code;
     int action;
+    int group_id;
     char friendname[32];
     char session_token[64];
-    char group_name[64];
 } InviteRequest;
 // 群组消息广播结构体
 typedef struct
@@ -225,15 +243,10 @@ typedef struct
     unsigned int length;
     unsigned int request_code; // 请求码
     unsigned int group_id;
+    char session_token[64];
     char group_newname[64];
 } GroupNameRestet;
 
-typedef struct
-{
-    unsigned int length;
-    unsigned int status_code; // 200=成功, 500=失败
-    char group_id[64];        // 创建成功的群组ID
-} GroupCreateResponse;
 
 // 点对点消息结构体
 typedef struct
@@ -261,20 +274,14 @@ typedef struct
 typedef struct
 {
     unsigned int length;
-    unsigned int request_code;  //ack
-    unsigned int block_number;  //分块编号
+    unsigned int request_code; // ack
+    unsigned int block_number; // 分块编号
 } FileTransferResponse;
-    typedef struct {
+typedef struct
+{
     int num_files;
     char **offline_file;
 } OfflineFileData;
-
-typedef struct
-{
-    unsigned int length;
-    unsigned int request_code; // 请求码
-    char token[64];            // 用于后续传输
-} Polling;
 
 // 初始化服务器套接字
 int init_server();
@@ -283,7 +290,7 @@ int init_server();
 void *handle_client(void *arg);
 
 // 登录功能处理
-void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pthread,event_pthread_arg *event_arg);
+void handle_login(int client_fd, char *buffer, MYSQL *conn, pthread_t *queue_pthread, event_pthread_arg *event_arg);
 // 添加好友处理
 void handle_add_friend(int client_fd, char *buffer, MYSQL *conn);
 // 创建用户处理
@@ -320,7 +327,7 @@ int find_uid(char *token);
 void private_message(int client, char *buffer, MYSQL *conn);
 
 MYSQL_RES *qurey(char *query, MYSQL *conn); // 执行一个查询语句，返回结果集合
-int init_file_transfer_server() ;
+int init_file_transfer_server();
 int find_id_mysql(char *name, MYSQL *conn); // 获取离线用户的id
 char **get_online_friends(char **friends, int *friend_count, int *online_friend_count);
 
@@ -348,7 +355,7 @@ void online_groupmembers(Group *groups, int group_id, char (*members)[MAX_USERNA
 
 // 声明获取群组成员的函数
 void get_groupmember(Group *groups, MYSQL *conn);
-void users_group_query(int client_fd,int user_id, MYSQL *conn);
+void users_group_query(int client_fd, int user_id, MYSQL *conn);
 // 声明向群组添加成员的函数
 int add_member_to_group(Group *groups, unsigned int group_id, const char *username);
 
@@ -361,7 +368,7 @@ int add_group(Group *groups, unsigned int group_id, const char *group_name);
 int dissolve_group(Group *groups, unsigned int group_id);
 void print_groups(Group *groups, MYSQL *conn);
 
-void groupname_reset(int client_fd,char *buffer,MYSQL *conn);
+void groupname_reset(int client_fd, char *buffer, MYSQL *conn);
 
 void offline_file_push(int client_fd, char *buffer, MYSQL *conn);
 void file_transfer(int client_fd, char *filename);
@@ -369,14 +376,21 @@ void file_recv(int client_fd, char *buffer, MYSQL *conn);
 
 void clietn_exit(pthread_t *event_pthread, event_pthread_arg *event_arg, int client_fd, MYSQL *conn);
 
-OfflineFileData *offline_file_query(int recver_id, MYSQL* conn);
+OfflineFileData *offline_file_query(int recver_id, MYSQL *conn);
 long get_file_size(const char *filename);
 void free_offline_file(OfflineFileData *data);
-void filetransfer_req(int client_fd,char *filename);
+void filetransfer_req(int client_fd, char *filename);
 
 int delete_client_map(int client_fd);
 void free_friend_list(char **friend_list);
 void destroy_event_queue(EventQueue *queue);
 void stop_event_queue(EventQueue *queue);
 void friend_remark(int client_fd, char *buffer, MYSQL *conn);
+
+void fetch_group_data(Group *groups, MYSQL *conn, int print_results);
+void print_groups(Group *groups, MYSQL *conn);
+void get_groupmember(Group *groups, MYSQL *conn);
+void push_friend_list(MYSQL *conn);
+void group_info(char *buffer);
+void group_lsit();
 #endif
