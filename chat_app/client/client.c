@@ -1,6 +1,6 @@
 #include "client.h"
 
-#define SERVER_IP "127.0.0.1" // 服务器IP地址
+#define SERVER_IP "10.215.13.23" // 服务器IP地址
 #define SERVER_PORT 10005     // 服务器端口
 #define FILE_TRANSFER_SERVER_PORT 10007
 int client_fd;                                    // 客户端套接字
@@ -46,7 +46,7 @@ void *send_request(void *arg)
 {
 
     int action;
-    printf("1.登录 2.创建用户3.添加好友或删除4.处理好友请求\n5.发送私聊消息6.创建群或者删除7.邀请好友入群或者踢人\n8.处理群聊邀请.9.退出10.发送群聊消息11发送文件给好友\n12.修改群名13.好友别名");
+    printf("1.登录 2.创建用户3.添加好友或删除4.处理好友请求\n5.发送私聊消息6.创建群或者删除7.邀请好友入群或者踢人\n8.处理群聊邀请.9.退出10.发送群聊消息11发送文件给好友\n12.修改群名13.好友别名\n");
     pthread_detach(pthread_self());
     while (1)
     {

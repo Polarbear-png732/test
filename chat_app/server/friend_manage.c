@@ -148,10 +148,13 @@ void handle_accept_add(int client_fd, char *buffer, MYSQL *conn)
     if(strcmp("accepted",status)==0){
         char onoff[64];
         if(online_query(handle_add->friend_username)){
-            snprintf(onoff,sizeof(onoff),"添加成功好友%s在线",handle_add->friend_username);
+            snprintf(onoff,sizeof(onoff),"添加成功%s在线",handle_add->friend_username);
             send_message(client_fd,onoff);
+            int i=find_session_index(1,handle_add->friend_username);
+            snprintf(onoff,sizeof(onoff),"添加成功%s在线",client_session.username);
+            send_message(session_table[i].client_fd,onoff);
         }else{
-            snprintf(onoff,sizeof(onoff),"添加成功好友%s不在线",handle_add->friend_username);
+            snprintf(onoff,sizeof(onoff),"添加成功%s不在线",handle_add->friend_username);
             send_message(client_fd,onoff);
         }
     }
@@ -216,4 +219,5 @@ void friend_remark(int client_fd, char *buffer, MYSQL *conn)
     "values(%d,%d,'%s')",user_id,friend_id,req->remark);
     do_query(query,conn);
     send_message(client_fd,"修改成功");
+    
 }
